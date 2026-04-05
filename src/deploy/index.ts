@@ -217,7 +217,7 @@ export async function runDeployPipeline(
     p.log.info(pc.bold("\n── Whop ────────────────────────────────────────"));
 
     const connectWhop = await p.confirm({
-      message: "Connect to Whop? (creates OAuth app + webhooks automatically)",
+      message: "Connect to Whop? (creates app with OAuth + webhooks automatically)",
       initialValue: true,
     });
 
