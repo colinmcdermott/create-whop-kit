@@ -185,16 +185,22 @@ export async function runDeployPipeline(
       }
     }
 
-    // Set DATABASE_URL (3 environments — show progress for each)
+    // Set DATABASE_URL — one spinner per environment so user sees progress
     if (databaseUrl) {
-      const s = p.spinner();
+      let s = p.spinner();
       s.start("Setting DATABASE_URL → production...");
       vercelEnvSet("DATABASE_URL", databaseUrl, "production", projectDir);
-      s.message("Setting DATABASE_URL → preview...");
+      s.stop("DATABASE_URL → production ✓");
+
+      s = p.spinner();
+      s.start("Setting DATABASE_URL → preview...");
       vercelEnvSet("DATABASE_URL", databaseUrl, "preview", projectDir);
-      s.message("Setting DATABASE_URL → development...");
+      s.stop("DATABASE_URL → preview ✓");
+
+      s = p.spinner();
+      s.start("Setting DATABASE_URL → development...");
       vercelEnvSet("DATABASE_URL", databaseUrl, "development", projectDir);
-      s.stop("DATABASE_URL configured (all environments)");
+      s.stop("DATABASE_URL → development ✓");
     }
 
     // Deploy
@@ -297,14 +303,14 @@ export async function runDeployPipeline(
         envVars["WHOP_API_KEY"] = app.client_secret;
         if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
 
-        s.start("Pushing credentials to Vercel...");
-        for (const [key] of Object.entries(envVars)) {
-          s.message(`Pushing ${key}...`);
-          vercelEnvSet(key, envVars[key], "production", projectDir);
-          vercelEnvSet(key, envVars[key], "preview", projectDir);
-          vercelEnvSet(key, envVars[key], "development", projectDir);
+        for (const [key, value] of Object.entries(envVars)) {
+          const vs = p.spinner();
+          vs.start(`Pushing ${key}...`);
+          vercelEnvSet(key, value, "production", projectDir);
+          vercelEnvSet(key, value, "preview", projectDir);
+          vercelEnvSet(key, value, "development", projectDir);
+          vs.stop(`${key} ✓`);
         }
-        s.stop("All credentials pushed to Vercel");
 
         // Redeploy
         s.start("Redeploying with full configuration...");
