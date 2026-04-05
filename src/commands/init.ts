@@ -336,13 +336,13 @@ export default defineCommand({
             options: [
               {
                 value: "deploy",
-                label: "Deploy to GitHub + Vercel + connect Whop (recommended)",
-                hint: "Private repo, auto-deploy on push, OAuth + webhooks configured",
+                label: "Push to GitHub and deploy to Vercel (recommended)",
+                hint: "Private repo, auto-deploy on every git push",
               },
               {
                 value: "local",
                 label: "Develop locally first",
-                hint: "Run on localhost:3000, deploy later with whop-kit deploy",
+                hint: "Start on localhost:3000, deploy later with whop-kit deploy",
               },
             ],
           });
