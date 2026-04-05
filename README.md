@@ -1,6 +1,6 @@
 # create-whop-kit
 
-Scaffold and manage [Whop](https://whop.com)-powered apps with [whop-kit](https://www.npmjs.com/package/whop-kit).
+Scaffold, deploy, and manage [Whop](https://whop.com)-powered apps with [whop-kit](https://www.npmjs.com/package/whop-kit).
 
 ## Create a new project
 
@@ -8,26 +8,60 @@ Scaffold and manage [Whop](https://whop.com)-powered apps with [whop-kit](https:
 npx create-whop-kit my-app
 ```
 
-Interactive prompts guide you through:
+The CLI walks you through:
 
-1. **What are you building?** — SaaS (full dashboard + billing) or Blank (just auth + webhooks)
+1. **What are you building?** — SaaS or Blank (just auth + webhooks)
 2. **Which framework?** — Next.js or Astro
-3. **Which database?** — Neon (auto-provisioned), Prisma Postgres (instant), Supabase, manual URL, or skip
-4. **Whop credentials** — App ID, API key, webhook secret (optional, can use setup wizard later)
+3. **Which database?** — Neon, Supabase, Prisma Postgres (all auto-provisioned)
+4. **Deploy?** — Push to GitHub + deploy to Vercel, or develop locally first
 
-The CLI clones a template, provisions your database, writes `.env.local`, installs dependencies, and initializes git.
+## What happens when you deploy
 
-### Non-interactive mode
+```
+── GitHub ──────────────────────────────
+  ◇ Private repo created
+  ◇ Code pushed
+
+── Vercel ──────────────────────────────
+  ◇ Connected to GitHub (auto-deploy on push)
+  ◇ Environment variables configured
+  ◇ Deployed to https://my-app.vercel.app
+
+── Whop ────────────────────────────────
+  ◇ OAuth app created automatically
+  ◇ Webhook endpoint configured
+  ◇ All credentials pushed to Vercel
+  ◇ Redeployed with full configuration
+```
+
+One command, one API key paste — fully deployed app. Every future `git push` auto-deploys.
+
+## Manage your project
 
 ```bash
-# Skip all prompts
-npx create-whop-kit my-app --framework nextjs --type saas --db neon --yes
+npx whop-kit status           # project health check
+npx whop-kit add email        # add Resend or SendGrid
+npx whop-kit add analytics    # add PostHog, GA, or Plausible
+npx whop-kit add webhook-event # scaffold a new event handler
+npx whop-kit deploy           # deploy (or redeploy) to Vercel + Whop
+npx whop-kit env              # view env vars (masked)
+npx whop-kit env --reveal     # show actual values
+npx whop-kit catalog          # list all available services
+npx whop-kit open whop        # open Whop dashboard
+npx whop-kit upgrade          # update whop-kit to latest
+```
 
-# With credentials
-npx create-whop-kit my-app --framework nextjs --db later --app-id "app_xxx" --api-key "apik_xxx"
+## Non-interactive mode
 
-# Preview without creating files
+```bash
+# Full auto — skip all prompts
+npx create-whop-kit my-app --framework nextjs --db neon --yes
+
+# Preview what would be created
 npx create-whop-kit my-app --framework nextjs --db later --dry-run
+
+# Skip deployment
+npx create-whop-kit my-app --framework nextjs --db neon --skip-deploy --yes
 ```
 
 ### All flags
@@ -37,68 +71,38 @@ npx create-whop-kit my-app --framework nextjs --db later --dry-run
 | `--framework` | `nextjs` or `astro` |
 | `--type` | `saas` or `blank` (default: `saas`) |
 | `--db` | `neon`, `prisma-postgres`, `supabase`, `manual`, `later` |
-| `--db-url` | PostgreSQL connection URL (skips DB provisioning) |
-| `--app-id` | Whop App ID |
-| `--api-key` | Whop API Key |
-| `--webhook-secret` | Whop webhook secret |
+| `--db-url` | PostgreSQL connection URL (skips provisioning) |
+| `--skip-deploy` | Skip GitHub/Vercel deployment |
+| `--whop-company-key` | Whop Company API key (skips interactive prompt) |
 | `-y, --yes` | Skip optional prompts |
 | `--dry-run` | Show what would be created |
-| `--verbose` | Detailed output |
-
-## Manage your project
-
-After creating a project, use `whop-kit` to add features and check status:
-
-```bash
-# Check project health
-npx whop-kit status
-
-# Add email (Resend or SendGrid)
-npx whop-kit add email
-
-# Add analytics (PostHog, Google Analytics, or Plausible)
-npx whop-kit add analytics
-
-# Add a webhook event handler
-npx whop-kit add webhook-event
-
-# Open provider dashboards
-npx whop-kit open whop
-npx whop-kit open neon
-npx whop-kit open vercel
-
-# Update whop-kit to latest
-npx whop-kit upgrade
-```
 
 ## Database provisioning
 
-The CLI can provision databases automatically — no need to leave the terminal:
+All three database providers are auto-provisioned — no need to leave the terminal:
 
 | Provider | How it works |
 |----------|-------------|
-| **Neon** | Installs `neonctl` → authenticates (browser) → creates project → gets connection string |
+| **Neon** | Installs `neonctl` → authenticates → creates project → gets connection string |
+| **Supabase** | Installs CLI → authenticates → creates project → guides connection string |
 | **Prisma Postgres** | Runs `npx create-db` → instant database, no account needed |
-| **Supabase** | Installs CLI → authenticates → creates project → guides you to get connection string |
 
 ## Templates
 
-| App Type | Framework | Template | Status |
-|----------|-----------|----------|--------|
-| SaaS | Next.js | Full dashboard, pricing, billing, docs | Available |
-| SaaS | Astro | Auth, payments, webhooks | Available |
-| Blank | Next.js | Just auth + webhooks — build anything | Available |
-| Course | — | — | Coming soon |
-| Community | — | — | Coming soon |
+| App Type | Framework | Description |
+|----------|-----------|-------------|
+| SaaS | Next.js | Full dashboard, pricing, billing, docs |
+| SaaS | Astro | Auth, payments, webhooks |
+| Blank | Next.js | Just auth + webhooks — build anything |
 
 ## How it works
 
-1. **Template** — clones a starter repo from GitHub
-2. **Database** — optionally provisions via provider CLI
-3. **Environment** — writes `.env.local` from the template's `.env.example`
-4. **Manifest** — creates `.whop/config.json` tracking your project state
-5. **Dependencies** — installs with your preferred package manager
-6. **Git** — initializes a fresh repo
+1. **Scaffold** — clone a starter template
+2. **Database** — auto-provision via provider CLI
+3. **GitHub** — create private repo, push code
+4. **Vercel** — connect GitHub, set env vars, deploy
+5. **Whop** — create OAuth app + webhook via API
+6. **Agent skills** — install provider skills for AI coding assistants
 
 ## License
 

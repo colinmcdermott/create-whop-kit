@@ -20,7 +20,7 @@ function isCancelled(value: unknown): value is symbol {
 export default defineCommand({
   meta: {
     name: "create-whop-kit",
-    version: "0.2.0",
+    version: "1.0.0",
     description: "Scaffold a new Whop-powered app with whop-kit",
   },
   args: {

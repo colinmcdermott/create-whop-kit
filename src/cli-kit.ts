@@ -10,7 +10,7 @@ import upgrade from "./commands/upgrade.js";
 const main = defineCommand({
   meta: {
     name: "whop-kit",
-    version: "0.6.0",
+    version: "1.0.0",
     description: "Manage your Whop project",
   },
   subCommands: {

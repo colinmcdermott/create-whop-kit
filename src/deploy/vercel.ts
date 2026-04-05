@@ -98,12 +98,11 @@ export async function vercelDeploy(projectDir: string): Promise<string | null> {
     s.stop("Vercel deployment failed");
     const errorOutput = result.stderr || result.stdout;
     if (errorOutput) {
-      p.log.error("Build output:");
       // Show last 600 chars of error (most relevant part)
       const trimmed = errorOutput.length > 600
         ? "..." + errorOutput.slice(-600)
         : errorOutput;
-      console.log(pc.dim(trimmed));
+      p.log.error(pc.dim(trimmed));
     }
     return null;
   }

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "clack": {
+      "source": "alexeira/skills",
+      "sourceType": "github",
+      "computedHash": "e0f1b620b4dc19023f3f381a94c6856fe3b96dac605285b642acc961a67fe946"
+    }
+  }
+}
