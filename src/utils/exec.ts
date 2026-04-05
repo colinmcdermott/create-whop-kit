@@ -2,20 +2,26 @@ import { execSync } from "node:child_process";
 
 export interface ExecResult {
   stdout: string;
+  stderr: string;
   success: boolean;
 }
 
-export function exec(cmd: string, cwd?: string): ExecResult {
+export function exec(cmd: string, cwd?: string, timeoutMs = 120_000): ExecResult {
   try {
     const stdout = execSync(cmd, {
       cwd,
       stdio: "pipe",
       encoding: "utf-8",
-      timeout: 120_000,
+      timeout: timeoutMs,
     }).trim();
-    return { stdout, success: true };
-  } catch {
-    return { stdout: "", success: false };
+    return { stdout, stderr: "", success: true };
+  } catch (err: unknown) {
+    const e = err as { stderr?: Buffer | string; stdout?: Buffer | string };
+    return {
+      stdout: e.stdout?.toString?.().trim() ?? "",
+      stderr: e.stderr?.toString?.().trim() ?? "",
+      success: false,
+    };
   }
 }
 
@@ -45,9 +51,10 @@ export function execWithStdin(cmd: string, input: string, cwd?: string): ExecRes
       encoding: "utf-8",
       timeout: 120_000,
     }).trim();
-    return { stdout, success: true };
-  } catch {
-    return { stdout: "", success: false };
+    return { stdout, stderr: "", success: true };
+  } catch (err: unknown) {
+    const e = err as { stderr?: Buffer | string };
+    return { stdout: "", stderr: e.stderr?.toString?.().trim() ?? "", success: false };
   }
 }
 

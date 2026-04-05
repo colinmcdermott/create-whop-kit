@@ -27,92 +27,63 @@ export const neonProvider: DbProvider = {
   async provision(projectName) {
     const cli = hasCommand("neonctl") ? "neonctl" : "neon";
 
-    // Check auth — use piped exec to test silently
+    // ── Auth ──────────────────────────────────────────────────────
+    p.log.step("Neon: checking authentication...");
     const whoami = exec(`${cli} me --output json`);
     if (!whoami.success) {
-      p.log.info("You need to authenticate with Neon. This will open your browser.");
-      console.log(""); // spacing before neonctl output
-
-      // Use interactive so the browser auth flow works
+      p.log.info("Opening browser for Neon authentication...");
+      console.log("");
       const authOk = execInteractive(`${cli} auth`);
       if (!authOk) {
-        p.log.error("Neon authentication failed. Try running manually:");
-        p.log.info(pc.bold(`  ${cli} auth`));
+        p.log.error("Authentication failed. Run manually: " + pc.bold(`${cli} auth`));
         return null;
       }
-      console.log(""); // spacing after
+      console.log("");
     }
 
-    // Create project — use interactive so org selection prompt works
-    p.log.info(`Creating Neon project "${projectName}"...`);
-    console.log(""); // spacing before neonctl output
-
+    // ── Create project (interactive for org selection) ────────────
+    p.log.step(`Neon: creating project "${projectName}"...`);
+    console.log("");
     const createOk = execInteractive(
       `${cli} projects create --name "${projectName}" --set-context`,
     );
+    console.log("");
 
     if (!createOk) {
-      p.log.error("Failed to create Neon project. Try manually at https://console.neon.tech");
+      p.log.error("Failed to create project. Try: https://console.neon.tech");
       return null;
     }
 
-    console.log(""); // spacing after
-    p.log.success("Neon project created");
+    // ── Get connection string ─────────────────────────────────────
+    // The --set-context flag means the project is now the default.
+    // Give Neon a moment for the endpoint to be ready, then query.
+    p.log.step("Neon: getting connection string...");
 
-    // Get connection string — --set-context means the project is now the default
-    // Try with --prisma flag for Prisma-compatible format
     let connString = "";
 
-    // Method 1: use the context that --set-context just set
-    const connResult = exec(`${cli} connection-string --prisma --output json`);
-    if (connResult.success) {
-      // Output might be JSON or raw string
-      try {
-        const parsed = JSON.parse(connResult.stdout);
-        connString = parsed.connection_string || parsed.connectionString || connResult.stdout;
-      } catch {
-        // Raw string output
-        connString = connResult.stdout.trim();
+    // Try multiple approaches with 30s timeout (endpoints can take a few seconds)
+    for (const flags of ["--prisma", ""]) {
+      if (connString) break;
+      const result = exec(`${cli} connection-string ${flags}`.trim(), undefined, 30_000);
+      if (result.success && result.stdout.startsWith("postgres")) {
+        connString = result.stdout.trim();
       }
     }
 
-    // Method 2: if that failed, try without --output json
+    // Fallback: ask user to paste (the create output already showed the URI)
     if (!connString) {
-      const fallback = exec(`${cli} connection-string --prisma`);
-      if (fallback.success && fallback.stdout.startsWith("postgres")) {
-        connString = fallback.stdout.trim();
-      }
-    }
-
-    // Method 3: try without --prisma
-    if (!connString) {
-      const raw = exec(`${cli} connection-string`);
-      if (raw.success && raw.stdout.startsWith("postgres")) {
-        connString = raw.stdout.trim();
-      }
-    }
-
-    // Method 4: interactive fallback — let the user see the output and paste
-    if (!connString) {
-      p.log.warning("Could not extract connection string automatically.");
-      console.log("");
-      execInteractive(`${cli} connection-string`);
-      console.log("");
+      p.log.warning("Could not retrieve connection string automatically.");
+      p.log.info("The connection URI was shown in the table above.");
 
       const manual = await p.text({
-        message: "Paste the connection string shown above",
+        message: "Paste the connection string from the output above",
         placeholder: "postgresql://...",
         validate: (v) => {
-          if (!v?.startsWith("postgres")) return "Must be a PostgreSQL connection string";
+          if (!v?.startsWith("postgres")) return "Must start with postgresql://";
         },
       });
       if (p.isCancel(manual)) return null;
       connString = manual;
-    }
-
-    if (!connString) {
-      p.log.error("Could not get connection string. Get it from: https://console.neon.tech");
-      return null;
     }
 
     return {

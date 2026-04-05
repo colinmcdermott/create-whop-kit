@@ -25,7 +25,7 @@ export function isVercelAuthenticated(): boolean {
 }
 
 export async function vercelLogin(): Promise<boolean> {
-  p.log.info("Authenticating with Vercel. This will open your browser.");
+  p.log.step("Vercel: authenticating (opening browser)...");
   console.log("");
   const ok = execInteractive("vercel login");
   console.log("");
@@ -34,39 +34,60 @@ export async function vercelLogin(): Promise<boolean> {
 
 /**
  * Deploy to Vercel production. Returns the production URL.
- * stdout from `vercel deploy --prod` is the deployment URL.
+ * Uses interactive mode so the user can see build progress and any errors.
+ * Then reads the deployment URL from `vercel inspect`.
  */
 export async function vercelDeploy(projectDir: string): Promise<string | null> {
-  const s = p.spinner();
-  s.start("Deploying to Vercel...");
+  p.log.step("Vercel: deploying to production (this may take a few minutes)...");
+  console.log("");
 
-  // Deploy with --yes to skip prompts, --prod for production
-  const result = exec("vercel deploy --prod --yes", projectDir);
+  // Use interactive so the user sees build logs and any prompts
+  const ok = execInteractive("vercel deploy --prod --yes", projectDir);
+  console.log("");
 
-  if (!result.success || !result.stdout) {
-    s.stop("Deployment failed");
+  if (!ok) {
+    p.log.error("Vercel deployment failed. Check the output above for details.");
     return null;
   }
 
-  // stdout is the deployment URL
-  let url = result.stdout.trim();
-  // Sometimes vercel outputs multiple lines, URL is the last one
-  const lines = url.split("\n");
-  url = lines[lines.length - 1].trim();
-
-  // Ensure it looks like a URL
-  if (!url.startsWith("https://")) {
-    s.stop("Could not determine deployment URL");
-    return null;
+  // Get the production URL from vercel inspect or vercel ls
+  const inspect = exec("vercel inspect --json", projectDir);
+  if (inspect.success) {
+    try {
+      const data = JSON.parse(inspect.stdout);
+      if (data.url) {
+        const url = data.url.startsWith("https://") ? data.url : `https://${data.url}`;
+        p.log.success(`Deployed to ${pc.cyan(url)}`);
+        return url;
+      }
+    } catch { /* parse failed, try fallback */ }
   }
 
-  s.stop(`Deployed to ${pc.cyan(url)}`);
-  return url;
+  // Fallback: get URL from `vercel ls`
+  const ls = exec("vercel ls --json 2>/dev/null | head -1", projectDir);
+  if (ls.success) {
+    const urlMatch = ls.stdout.match(/https:\/\/[^\s"]+\.vercel\.app/);
+    if (urlMatch) {
+      p.log.success(`Deployed to ${pc.cyan(urlMatch[0])}`);
+      return urlMatch[0];
+    }
+  }
+
+  // Last fallback: ask the user
+  p.log.warning("Could not determine deployment URL automatically.");
+  const manual = await p.text({
+    message: "Paste your Vercel deployment URL",
+    placeholder: "https://your-app.vercel.app",
+    validate: (v) => {
+      if (!v?.startsWith("https://")) return "Must be a https:// URL";
+    },
+  });
+  if (p.isCancel(manual)) return null;
+  return manual;
 }
 
 /**
  * Set an environment variable on the Vercel project.
- * Pipes the value via stdin to avoid shell escaping issues.
  */
 export function vercelEnvSet(
   key: string,
@@ -74,7 +95,6 @@ export function vercelEnvSet(
   environment: "production" | "preview" | "development" = "production",
   projectDir?: string,
 ): boolean {
-  // Use --force to overwrite existing vars without prompting
   const result = execWithStdin(
     `vercel env add ${key} ${environment} --force`,
     value,
@@ -95,7 +115,6 @@ export function vercelEnvSetBatch(
 
   for (const [key, value] of Object.entries(vars)) {
     if (!value) continue;
-    // Set for all environments
     const ok = vercelEnvSet(key, value, "production", projectDir)
       && vercelEnvSet(key, value, "preview", projectDir)
       && vercelEnvSet(key, value, "development", projectDir);

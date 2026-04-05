@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec } from "../utils/exec.js";
+import { exec, execInteractive } from "../utils/exec.js";
 import {
   isVercelInstalled,
   installVercel,
@@ -204,12 +204,14 @@ export async function runDeployPipeline(
   }
 
   // ── Step 9: Redeploy with full config ───────────────────────────
-  s.start("Redeploying with full configuration...");
-  const redeployResult = exec("vercel deploy --prod --yes", projectDir);
-  if (redeployResult.success) {
-    s.stop("Redeployed successfully");
+  p.log.step("Vercel: redeploying with full configuration...");
+  console.log("");
+  const redeployOk = execInteractive("vercel deploy --prod --yes", projectDir);
+  console.log("");
+  if (redeployOk) {
+    p.log.success("Redeployed with full configuration");
   } else {
-    s.stop("Redeploy failed — will pick up env vars on next deploy");
+    p.log.warning("Redeploy failed — env vars will apply on next deploy/push");
   }
 
   return {
