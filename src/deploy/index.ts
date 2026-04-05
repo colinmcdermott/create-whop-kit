@@ -290,17 +290,17 @@ export async function runDeployPipeline(
       s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
       // ── Step D: Get App API key from user ────────────────────────
-      // The create API doesn't return the app's API key — user must copy it from dashboard
       p.note(
         [
-          `Your app was created! Now copy its credentials:`,
+          `Your app was created! Two quick things in the dashboard:`,
           "",
           `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
           `${pc.bold("2.")} Click on your new app "${projectName}"`,
-          `${pc.bold("3.")} Copy the environment variables shown on the app page`,
-          `${pc.bold("4.")} Paste the whole block below (both lines)`,
+          `${pc.bold("3.")} Go to the ${pc.bold("OAuth")} tab and set Client mode to ${pc.bold("Public")}`,
+          `${pc.bold("4.")} Copy the environment variables shown on the app page`,
+          `${pc.bold("5.")} Paste the whole block below (both lines)`,
         ].join("\n"),
-        "App Credentials",
+        "Configure App",
       );
 
       openUrl("https://whop.com/dashboard/developer");
