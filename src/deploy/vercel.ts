@@ -14,7 +14,6 @@ export async function installOrUpdateVercel(): Promise<boolean> {
   const s = p.spinner();
 
   if (isVercelInstalled()) {
-    // Check if update is available
     const versionResult = exec("vercel --version");
     const currentVersion = versionResult.stdout.replace(/[^0-9.]/g, "");
 
@@ -61,7 +60,6 @@ export function getVercelUser(): string | null {
 
 export async function vercelLogin(): Promise<boolean> {
   p.log.info("You'll be redirected to Vercel to sign in (or create an account).");
-  p.log.info(pc.dim("This is needed to deploy your app."));
   console.log("");
   const ok = execInteractive("vercel login");
   console.log("");
@@ -86,73 +84,77 @@ export async function vercelLink(projectDir: string): Promise<boolean> {
 
 /**
  * Deploy to Vercel production. Returns the production URL.
- * Captures stdout to extract the URL. Uses 5 minute timeout for builds.
+ * Uses interactive mode so users see live build logs, then extracts URL.
  */
 export async function vercelDeploy(projectDir: string): Promise<string | null> {
-  const s = p.spinner();
-  s.start("Vercel: deploying to production (this may take a few minutes)...");
+  p.log.step("Vercel: deploying to production...");
+  console.log("");
 
-  const result = exec("vercel deploy --prod --yes", projectDir, 300_000);
+  // Interactive deploy — user sees build logs in real time
+  const ok = execInteractive("vercel deploy --prod --yes", projectDir);
+  console.log("");
 
-  if (!result.success) {
-    s.stop("Vercel deployment failed");
-    const errorOutput = result.stderr || result.stdout;
-    if (errorOutput) {
-      // Show last 600 chars of error (most relevant part)
-      const trimmed = errorOutput.length > 600
-        ? "..." + errorOutput.slice(-600)
-        : errorOutput;
-      p.log.error(pc.dim(trimmed));
-    }
+  if (!ok) {
+    p.log.error("Vercel deployment failed. Check the build output above.");
     return null;
   }
 
-  // Parse URL from stdout
-  const lines = result.stdout.split("\n");
-  let url = "";
+  // Extract URL — the deploy succeeded, now get the production URL
+  // Method 1: vercel inspect (most reliable)
+  const s = p.spinner();
+  s.start("Getting deployment URL...");
 
-  // Look for aliased URL (e.g. "Aliased: https://my-app.vercel.app")
-  for (const line of lines) {
-    if (line.includes("Aliased:") || line.includes("Production:")) {
-      const match = line.match(/https:\/\/[^\s\[\]]+/);
-      if (match) {
-        url = match[0];
-        // The Aliased URL is the clean one — prefer it
-        if (line.includes("Aliased:")) break;
+  // Try `vercel ls` to get the latest deployment URL
+  const ls = exec("vercel ls --json", projectDir, 15_000);
+  if (ls.success) {
+    try {
+      const data = JSON.parse(ls.stdout);
+      // Find the latest production deployment
+      const prod = Array.isArray(data)
+        ? data.find((d: { target?: string }) => d.target === "production")
+        : null;
+      if (prod?.url) {
+        const url = `https://${prod.url}`;
+        s.stop(`Deployed to ${pc.cyan(url)}`);
+        return url;
+      }
+    } catch { /* parse failed */ }
+  }
+
+  // Method 2: vercel project inspect for the production alias
+  const inspect = exec("vercel inspect --json", projectDir, 15_000);
+  if (inspect.success) {
+    const urlMatch = inspect.stdout.match(/https:\/\/[^\s"]+\.vercel\.app/);
+    if (urlMatch) {
+      s.stop(`Deployed to ${pc.cyan(urlMatch[0])}`);
+      return urlMatch[0];
+    }
+  }
+
+  // Method 3: read .vercel/project.json for the project name and construct URL
+  try {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const projectJson = JSON.parse(
+      readFileSync(join(projectDir, ".vercel", "project.json"), "utf-8"),
+    );
+    if (projectJson.projectId) {
+      // Get project details
+      const proj = exec(`vercel project inspect ${projectJson.projectId} --json`, projectDir, 15_000);
+      if (proj.success) {
+        const urlMatch = proj.stdout.match(/https:\/\/[^\s"]+\.vercel\.app/);
+        if (urlMatch) {
+          s.stop(`Deployed to ${pc.cyan(urlMatch[0])}`);
+          return urlMatch[0];
+        }
       }
     }
-  }
+  } catch { /* no project.json */ }
 
-  // Fallback: any vercel.app URL, preferring shorter ones
-  if (!url) {
-    const urls: string[] = [];
-    for (const line of lines) {
-      const match = line.match(/https:\/\/[^\s\[\]]+\.vercel\.app/);
-      if (match) urls.push(match[0]);
-    }
-    // Sort by length — shortest is usually the alias
-    if (urls.length > 0) {
-      urls.sort((a, b) => a.length - b.length);
-      url = urls[0];
-    }
-  }
+  s.stop("Deployed (extracting URL...)");
 
-  if (url) {
-    s.stop(`Deployed to ${pc.cyan(url)}`);
-    return url;
-  }
-
-  // Fallback: any https URL
-  for (const line of lines) {
-    const match = line.match(/https:\/\/[^\s\[\]]+/);
-    if (match && !match[0].includes("github.com") && !match[0].includes("vercel.com/")) {
-      s.stop(`Deployed to ${pc.cyan(match[0])}`);
-      return match[0];
-    }
-  }
-
-  s.stop("Deployed but could not extract URL");
-
+  // Fallback: ask the user — the URL was shown in the build output above
+  p.log.info("The deployment URL was shown in the build output above.");
   const manual = await p.text({
     message: "Paste your Vercel production URL",
     placeholder: "https://your-app.vercel.app",
