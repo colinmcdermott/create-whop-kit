@@ -112,6 +112,44 @@ export default defineCommand({
       process.exit(1);
     }
 
+    // ── Preset or custom? ─────────────────────────────────────────────
+    let usePreset = false;
+    if (!isNonInteractive && !args.yes) {
+      const mode = await p.select({
+        message: "How would you like to set up?",
+        options: [
+          {
+            value: "preset-saas",
+            label: "SaaS Starter (recommended)",
+            hint: "Next.js + Neon + GitHub + Vercel + pricing plans",
+          },
+          {
+            value: "preset-blank",
+            label: "Blank Canvas",
+            hint: "Next.js + Neon + GitHub + Vercel — no plans, build anything",
+          },
+          {
+            value: "custom",
+            label: "Custom setup",
+            hint: "Choose framework, database, and deployment options",
+          },
+        ],
+      });
+      if (isCancelled(mode)) { p.cancel("Cancelled."); process.exit(0); }
+
+      if (mode === "preset-saas") {
+        usePreset = true;
+        args.type = "saas";
+        args.framework = "nextjs";
+        args.db = "neon";
+      } else if (mode === "preset-blank") {
+        usePreset = true;
+        args.type = "blank";
+        args.framework = "nextjs";
+        args.db = "neon";
+      }
+    }
+
     // ── App type ──────────────────────────────────────────────────────
     let appType = args.type;
     if (!isNonInteractive && !args.yes) {
