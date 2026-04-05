@@ -344,7 +344,7 @@ export default defineCommand({
     }
     if (missing.length > 0) {
       summary += `${pc.yellow("○")} Missing: ${missing.join(", ")}\n`;
-      summary += `  ${pc.dim("Configure via the setup wizard or .env.local")}\n`;
+      summary += `  ${pc.dim("The setup wizard at http://localhost:3000 will guide you through it")}\n`;
     }
     if (dbNote) {
       summary += `${pc.yellow("!")} ${dbNote}\n`;
@@ -352,9 +352,11 @@ export default defineCommand({
     summary += `\n`;
     summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
     if (dbUrl) {
-      summary += `  ${pc.bold(`${pm} run db:push`)}\n`;
+      summary += `  ${pc.bold(`${pm} run db:push`)}   ${pc.dim("# push schema to database")}\n`;
     }
-    summary += `  ${pc.bold(`${pm} run dev`)}`;
+    summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start dev server")}\n`;
+    summary += `\n`;
+    summary += `  ${pc.dim("Then open http://localhost:3000")}`;
 
     p.note(summary, "Your app is ready");
 

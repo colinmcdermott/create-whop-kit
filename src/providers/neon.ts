@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec, hasCommand } from "../utils/exec.js";
+import { exec, execInteractive, hasCommand } from "../utils/exec.js";
 import type { DbProvider, ProvisionResult } from "./types.js";
 
 export const neonProvider: DbProvider = {
@@ -27,50 +27,96 @@ export const neonProvider: DbProvider = {
   async provision(projectName) {
     const cli = hasCommand("neonctl") ? "neonctl" : "neon";
 
-    // Check auth
-    const whoami = exec(`${cli} me`);
+    // Check auth — use piped exec to test silently
+    const whoami = exec(`${cli} me --output json`);
     if (!whoami.success) {
-      p.log.info("You need to authenticate with Neon.");
-      p.log.info(`Running ${pc.bold(`${cli} auth`)} — this will open your browser.`);
+      p.log.info("You need to authenticate with Neon. This will open your browser.");
+      console.log(""); // spacing before neonctl output
 
-      const authResult = exec(`${cli} auth`);
-      if (!authResult.success) {
+      // Use interactive so the browser auth flow works
+      const authOk = execInteractive(`${cli} auth`);
+      if (!authOk) {
         p.log.error("Neon authentication failed. Try running manually:");
         p.log.info(pc.bold(`  ${cli} auth`));
         return null;
       }
+      console.log(""); // spacing after
     }
 
-    // Create project
-    const s = p.spinner();
-    s.start(`Creating Neon project "${projectName}"...`);
+    // Create project — use interactive so org selection prompt works
+    p.log.info(`Creating Neon project "${projectName}"...`);
+    console.log(""); // spacing before neonctl output
 
-    const createResult = exec(
-      `${cli} projects create --name "${projectName}" --set-context --output json`,
+    const createOk = execInteractive(
+      `${cli} projects create --name "${projectName}" --set-context`,
     );
 
-    if (!createResult.success) {
-      s.stop("Failed to create Neon project");
-      p.log.error("Try creating manually at https://console.neon.tech");
+    if (!createOk) {
+      p.log.error("Failed to create Neon project. Try manually at https://console.neon.tech");
       return null;
     }
 
-    s.stop("Neon project created");
+    console.log(""); // spacing after
+    p.log.success("Neon project created");
 
-    // Get connection string
-    s.start("Getting connection string...");
-    const connResult = exec(`${cli} connection-string --prisma`);
+    // Get connection string — --set-context means the project is now the default
+    // Try with --prisma flag for Prisma-compatible format
+    let connString = "";
 
-    if (!connResult.success) {
-      s.stop("Could not retrieve connection string");
-      p.log.error("Get it from: https://console.neon.tech");
-      return null;
+    // Method 1: use the context that --set-context just set
+    const connResult = exec(`${cli} connection-string --prisma --output json`);
+    if (connResult.success) {
+      // Output might be JSON or raw string
+      try {
+        const parsed = JSON.parse(connResult.stdout);
+        connString = parsed.connection_string || parsed.connectionString || connResult.stdout;
+      } catch {
+        // Raw string output
+        connString = connResult.stdout.trim();
+      }
     }
 
-    s.stop("Connection string retrieved");
+    // Method 2: if that failed, try without --output json
+    if (!connString) {
+      const fallback = exec(`${cli} connection-string --prisma`);
+      if (fallback.success && fallback.stdout.startsWith("postgres")) {
+        connString = fallback.stdout.trim();
+      }
+    }
+
+    // Method 3: try without --prisma
+    if (!connString) {
+      const raw = exec(`${cli} connection-string`);
+      if (raw.success && raw.stdout.startsWith("postgres")) {
+        connString = raw.stdout.trim();
+      }
+    }
+
+    // Method 4: interactive fallback — let the user see the output and paste
+    if (!connString) {
+      p.log.warning("Could not extract connection string automatically.");
+      console.log("");
+      execInteractive(`${cli} connection-string`);
+      console.log("");
+
+      const manual = await p.text({
+        message: "Paste the connection string shown above",
+        placeholder: "postgresql://...",
+        validate: (v) => {
+          if (!v?.startsWith("postgres")) return "Must be a PostgreSQL connection string";
+        },
+      });
+      if (p.isCancel(manual)) return null;
+      connString = manual;
+    }
+
+    if (!connString) {
+      p.log.error("Could not get connection string. Get it from: https://console.neon.tech");
+      return null;
+    }
 
     return {
-      connectionString: connResult.stdout,
+      connectionString: connString,
       provider: "neon",
     } satisfies ProvisionResult;
   },
