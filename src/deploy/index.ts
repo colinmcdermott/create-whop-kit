@@ -25,6 +25,7 @@ import {
   createWhopApp,
   createWhopWebhook,
 } from "./whop-api.js";
+import { setupPlans, planResultToEnvVars } from "./plans.js";
 import type { DeployResult } from "./types.js";
 
 const WEBHOOK_EVENTS = [
@@ -382,11 +383,28 @@ export async function runDeployPipeline(
         s.stop("Webhook created");
       }
 
-      // ── Step F: Push env vars to Vercel ──────────────────────────
+      // ── Step G: Set up pricing plans ────────────────────────────
+      p.log.info(pc.bold("\n── Pricing Plans ───────────────────────────────"));
+
+      const setupPlanChoice = await p.confirm({
+        message: "Set up pricing plans now?",
+        initialValue: true,
+      });
+
+      let planEnvVars: Record<string, string> = {};
+      if (!p.isCancel(setupPlanChoice) && setupPlanChoice) {
+        const planResult = await setupPlans(apiKey, companyId);
+        if (planResult) {
+          planEnvVars = planResultToEnvVars(planResult);
+          p.log.success(`${planResult.tiers.length} paid tier(s) created${planResult.freePlanId ? " + free tier" : ""}`);
+        }
+      }
+
+      // ── Step H: Push all env vars to Vercel ─────────────────────
       if (useVercel) {
         const envVars: Record<string, string> = {};
 
-        // Use the appId from user paste (may differ from API-created app.id)
+        // App credentials
         if (framework === "nextjs") {
           envVars["NEXT_PUBLIC_WHOP_APP_ID"] = appId;
         } else {
@@ -394,8 +412,10 @@ export async function runDeployPipeline(
         }
         if (appApiKey) envVars["WHOP_API_KEY"] = appApiKey;
         if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
-        // Set app URL so the template knows its own domain
         envVars["NEXT_PUBLIC_APP_URL"] = productionUrl;
+
+        // Plan IDs
+        Object.assign(envVars, planEnvVars);
 
         for (const [key, value] of Object.entries(envVars)) {
           if (!value) continue;

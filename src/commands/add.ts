@@ -5,6 +5,7 @@ import { readManifest, addFeatureToManifest } from "../scaffolding/manifest.js";
 import { emailFeature } from "../features/email.js";
 import { analyticsFeature } from "../features/analytics.js";
 import { webhookEventFeature } from "../features/webhook-event.js";
+import { plansFeature } from "../features/plans.js";
 
 export interface Feature {
   name: string;
@@ -14,6 +15,7 @@ export interface Feature {
 }
 
 const FEATURES: Record<string, Feature> = {
+  plans: plansFeature,
   email: emailFeature,
   analytics: analyticsFeature,
   "webhook-event": webhookEventFeature,
