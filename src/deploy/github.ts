@@ -73,18 +73,20 @@ export async function createGitHubRepo(
     s.stop("GitHub repo created");
   }
 
-  // Step 2: Push code (retry once if GitHub hasn't propagated yet)
+  // Step 2: Push code (retry with increasing delay — GitHub propagation can take 5-10s)
   s = p.spinner();
   s.start("Pushing code to GitHub...");
 
-  let pushOk = exec("git push -u origin main", projectDir, 30_000).success;
-  if (!pushOk) {
-    // GitHub can take a moment to propagate — wait 3 seconds and retry
-    s.stop("Push failed, retrying...");
-    await new Promise((r) => setTimeout(r, 3000));
-    s = p.spinner();
-    s.start("Retrying push...");
+  let pushOk = false;
+  for (const delay of [0, 5000, 10000]) {
+    if (delay > 0) {
+      s.stop(`Waiting for GitHub to propagate (${delay / 1000}s)...`);
+      await new Promise((r) => setTimeout(r, delay));
+      s = p.spinner();
+      s.start("Pushing code to GitHub...");
+    }
     pushOk = exec("git push -u origin main", projectDir, 30_000).success;
+    if (pushOk) break;
   }
 
   if (!pushOk) {

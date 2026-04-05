@@ -138,9 +138,6 @@ export async function runDeployPipeline(
         }
 
         githubRepoUrl = await createGitHubRepo(projectDir, repoFullName);
-        if (githubRepoUrl) {
-          p.log.success(`Code pushed to ${pc.cyan(githubRepoUrl)}`);
-        }
       }
     }
   }
