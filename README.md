@@ -116,18 +116,32 @@ All auto-provisioned via their CLIs:
 | **Vercel** | Installs CLI → authenticates → links project → connects GitHub → deploys |
 | **Whop** | Creates app via API → sets OAuth to Public → creates webhook → pushes credentials |
 
-## Non-interactive mode
+## Quick start examples
 
 ```bash
-# Full auto — skip all prompts
-npx create-whop-kit my-app --framework nextjs --db neon --yes
+# Recommended — SaaS with Neon, walks you through deploy + Whop + plans
+npx create-whop-kit my-app --framework nextjs --db neon
+
+# Same but with Supabase
+npx create-whop-kit my-app --framework nextjs --db supabase
+
+# Blank starter — just auth + webhooks, you build the rest
+npx create-whop-kit my-app --type blank --framework nextjs --db neon
+
+# Astro instead of Next.js
+npx create-whop-kit my-app --framework astro --db neon
+
+# Local dev only — no deploy, configure later
+npx create-whop-kit my-app --framework nextjs --db neon --skip-deploy
+
+# Fully non-interactive — scaffold only, no deploy
+npx create-whop-kit my-app --framework nextjs --db later --skip-deploy --yes
 
 # Preview what would be created
-npx create-whop-kit my-app --framework nextjs --db later --dry-run
-
-# Skip deployment
-npx create-whop-kit my-app --framework nextjs --db neon --skip-deploy --yes
+npx create-whop-kit my-app --framework nextjs --db neon --dry-run
 ```
+
+**Tip:** Pass `--framework` and `--db` to skip the setup questions and go straight to deployment and Whop configuration — the important parts.
 
 ### All flags
 
@@ -139,7 +153,7 @@ npx create-whop-kit my-app --framework nextjs --db neon --skip-deploy --yes
 | `--db-url` | PostgreSQL connection URL (skips provisioning) |
 | `--skip-deploy` | Skip GitHub/Vercel deployment |
 | `--whop-company-key` | Whop Company API key (skips prompt) |
-| `-y, --yes` | Skip optional prompts |
+| `-y, --yes` | Skip setup questions, use defaults |
 | `--dry-run` | Show what would be created |
 
 ## Templates
