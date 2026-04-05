@@ -156,11 +156,11 @@ export default defineCommand({
       const result = await p.select({
         message: "Which database?",
         options: [
-          { value: "neon", label: "Neon (recommended)", hint: "Serverless Postgres — auto-provisioned via CLI" },
-          { value: "supabase", label: "Supabase", hint: "Postgres + Auth + Storage — auto-provisioned via CLI" },
-          { value: "prisma-postgres", label: "Prisma Postgres", hint: "Instant database — no account needed, auto-provisioned" },
-          { value: "manual", label: "I have a connection string", hint: "Paste an existing PostgreSQL URL" },
-          { value: "later", label: "Configure later", hint: "Skip database setup for now" },
+          { value: "neon", label: "Neon (recommended)" },
+          { value: "supabase", label: "Supabase" },
+          { value: "prisma-postgres", label: "Prisma Postgres" },
+          { value: "manual", label: "I have a connection string" },
+          { value: "later", label: "Configure later" },
         ],
       });
       if (isCancelled(result)) { p.cancel("Cancelled."); process.exit(0); }
