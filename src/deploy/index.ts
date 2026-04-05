@@ -290,20 +290,25 @@ export async function runDeployPipeline(
       s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
       // ── Step D: Get App API key from user ────────────────────────
+      const oauthUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
+      const appUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/`;
+
       p.note(
         [
-          `Your app was created! Two quick things in the dashboard:`,
+          `Your app was created! Two quick things:`,
           "",
-          `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
-          `${pc.bold("2.")} Click on your new app "${projectName}"`,
-          `${pc.bold("3.")} Go to the ${pc.bold("OAuth")} tab and set Client mode to ${pc.bold("Public")}`,
-          `${pc.bold("4.")} Copy the environment variables shown on the app page`,
-          `${pc.bold("5.")} Paste the whole block below (both lines)`,
+          `${pc.bold("1.")} Set OAuth to Public mode (opening now):`,
+          `   ${pc.cyan(oauthUrl)}`,
+          `   Set Client mode to ${pc.bold('"Public"')} and save`,
+          "",
+          `${pc.bold("2.")} Copy your app's environment variables:`,
+          `   ${pc.cyan(appUrl)}`,
+          `   Copy both lines and paste below`,
         ].join("\n"),
         "Configure App",
       );
 
-      openUrl("https://whop.com/dashboard/developer");
+      openUrl(oauthUrl);
 
       let appApiKey = "";
       let appId = app.id;
