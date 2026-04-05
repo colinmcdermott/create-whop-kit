@@ -325,21 +325,29 @@ export default defineCommand({
     // ── Git init ──────────────────────────────────────────────────────
     initGit(projectDir);
 
-    // ── Deploy to Vercel ─────────────────────────────────────────────
+    // ── Deploy ─────────────────────────────────────────────────────
     let deployResult = null;
     let deployAttempted = false;
     if (!args["skip-deploy"] && !args["dry-run"]) {
-      const shouldDeploy = isNonInteractive
-        ? false
-        : await (async () => {
-            const result = await p.confirm({
-              message: "Deploy to Vercel and connect to Whop?",
-              initialValue: true,
-            });
-            return !isCancelled(result) && result;
-          })();
+      const deployChoice = isNonInteractive
+        ? "local"
+        : await p.select({
+            message: "What would you like to do next?",
+            options: [
+              {
+                value: "deploy",
+                label: "Deploy to GitHub + Vercel + connect Whop (recommended)",
+                hint: "Private repo, auto-deploy on push, OAuth + webhooks configured",
+              },
+              {
+                value: "local",
+                label: "Develop locally first",
+                hint: "Run on localhost:3000, deploy later with whop-kit deploy",
+              },
+            ],
+          });
 
-      if (shouldDeploy) {
+      if (!isCancelled(deployChoice) && deployChoice === "deploy") {
         deployAttempted = true;
         const { runDeployPipeline } = await import("../deploy/index.js");
         deployResult = await runDeployPipeline({
