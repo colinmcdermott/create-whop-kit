@@ -227,37 +227,63 @@ export async function runDeployPipeline(
           `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
           `${pc.bold("2.")} Click ${pc.bold('"Create"')} under "Company API Keys"`,
           `${pc.bold("3.")} Give it a name (e.g. "${projectName}")`,
-          `${pc.bold("4.")} Click Create ${pc.dim("(default permissions are fine)")}`,
-          `${pc.bold("5.")} Copy the key and paste it below`,
+          `${pc.bold("4.")} Set role to ${pc.bold('"Owner"')} ${pc.dim("(ensures all permissions)")}`,
+          `${pc.bold("5.")} Click Create, copy the key, and paste it below`,
         ].join("\n"),
         "Whop Company API Key",
       );
 
       openUrl("https://whop.com/dashboard/developer");
 
+      // Retry loop — let user paste a new key if validation fails
       let apiKey = options.whopCompanyKey ?? "";
-      if (!apiKey) {
-        const result = await p.text({
-          message: "Paste your Company API key",
-          placeholder: "paste the key here...",
-          validate: (v) => (!v ? "API key is required" : undefined),
-        });
-        if (p.isCancel(result)) {
+      let companyId: string | null = null;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!apiKey) {
+          const result = await p.text({
+            message: attempt === 0
+              ? "Paste your Company API key"
+              : "Paste a new Company API key (make sure role is set to Owner)",
+            placeholder: "paste the key here...",
+            validate: (v) => (!v ? "API key is required" : undefined),
+          });
+          if (p.isCancel(result)) {
+            return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+          }
+          apiKey = result;
+        }
+
+        const s = p.spinner();
+        s.start("Validating API key...");
+        companyId = await validateApiKey(apiKey);
+
+        if (companyId) {
+          s.stop(`API key valid (company: ${pc.dim(companyId)})`);
+          break;
+        }
+
+        s.stop("API key invalid or missing permissions");
+
+        if (attempt < 2) {
+          p.log.warning("Make sure the key's role is set to \"Owner\" (not Admin).");
+          const retry = await p.confirm({
+            message: "Try a different key?",
+            initialValue: true,
+          });
+          if (p.isCancel(retry) || !retry) {
+            return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+          }
+          apiKey = ""; // clear so it prompts again
+        } else {
+          p.log.error("Could not validate after 3 attempts. Configure Whop manually via the setup wizard.");
           return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
         }
-        apiKey = result;
       }
 
-      // Validate key and get company ID
-      const s = p.spinner();
-      s.start("Validating API key...");
-      const companyId = await validateApiKey(apiKey);
       if (!companyId) {
-        s.stop("Invalid API key");
-        p.log.error("Check that the key has permissions: developer:create_app, developer:manage_api_key, developer:manage_webhook, company:basic:read");
         return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
       }
-      s.stop(`API key valid (company: ${pc.dim(companyId)})`);
 
       // Step 1: Create OAuth app (with redirect URIs for localhost + production)
       const redirectUris = [
