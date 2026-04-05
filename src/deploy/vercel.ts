@@ -99,62 +99,23 @@ export async function vercelDeploy(projectDir: string): Promise<string | null> {
     return null;
   }
 
-  // Extract URL — the deploy succeeded, now get the production URL
-  // Method 1: vercel inspect (most reliable)
-  const s = p.spinner();
-  s.start("Getting deployment URL...");
-
-  // Try `vercel ls` to get the latest deployment URL
-  const ls = exec("vercel ls --json", projectDir, 15_000);
-  if (ls.success) {
-    try {
-      const data = JSON.parse(ls.stdout);
-      // Find the latest production deployment
-      const prod = Array.isArray(data)
-        ? data.find((d: { target?: string }) => d.target === "production")
-        : null;
-      if (prod?.url) {
-        const url = `https://${prod.url}`;
-        s.stop(`Deployed to ${pc.cyan(url)}`);
-        return url;
-      }
-    } catch { /* parse failed */ }
-  }
-
-  // Method 2: vercel project inspect for the production alias
-  const inspect = exec("vercel inspect --json", projectDir, 15_000);
-  if (inspect.success) {
-    const urlMatch = inspect.stdout.match(/https:\/\/[^\s"]+\.vercel\.app/);
-    if (urlMatch) {
-      s.stop(`Deployed to ${pc.cyan(urlMatch[0])}`);
-      return urlMatch[0];
-    }
-  }
-
-  // Method 3: read .vercel/project.json for the project name and construct URL
+  // Extract URL from .vercel/project.json — the most reliable method
+  // Vercel always creates this file during link/deploy
   try {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const projectJson = JSON.parse(
       readFileSync(join(projectDir, ".vercel", "project.json"), "utf-8"),
     );
-    if (projectJson.projectId) {
-      // Get project details
-      const proj = exec(`vercel project inspect ${projectJson.projectId} --json`, projectDir, 15_000);
-      if (proj.success) {
-        const urlMatch = proj.stdout.match(/https:\/\/[^\s"]+\.vercel\.app/);
-        if (urlMatch) {
-          s.stop(`Deployed to ${pc.cyan(urlMatch[0])}`);
-          return urlMatch[0];
-        }
-      }
+    if (projectJson.projectName) {
+      const url = `https://${projectJson.projectName}.vercel.app`;
+      p.log.success(`Deployed to ${pc.cyan(url)}`);
+      return url;
     }
   } catch { /* no project.json */ }
 
-  s.stop("Deployed (extracting URL...)");
-
   // Fallback: ask the user — the URL was shown in the build output above
-  p.log.info("The deployment URL was shown in the build output above.");
+  p.log.info("The deployment URL was shown in the build output above (after 'Aliased:')");
   const manual = await p.text({
     message: "Paste your Vercel production URL",
     placeholder: "https://your-app.vercel.app",
