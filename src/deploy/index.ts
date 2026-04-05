@@ -225,6 +225,8 @@ export async function runDeployPipeline(
     if (!p.isCancel(connectWhop) && connectWhop) {
       p.note(
         [
+          `We need a Company API key to create your OAuth app and webhooks.`,
+          "",
           `${pc.bold("1.")} Go to the Whop Developer Dashboard`,
           `   ${pc.cyan("https://whop.com/dashboard/developer")}`,
           "",
@@ -233,13 +235,17 @@ export async function runDeployPipeline(
           `${pc.bold("3.")} Name it anything (e.g. "${projectName}")`,
           "",
           `${pc.bold("4.")} Select these permissions:`,
-          `   ${pc.green("•")} developer:create_app`,
-          `   ${pc.green("•")} developer:manage_api_key`,
-          `   ${pc.green("•")} developer:manage_webhook`,
+          `   ${pc.green("•")} developer:create_app       ${pc.dim("— create the OAuth app")}`,
+          `   ${pc.green("•")} developer:update_app       ${pc.dim("— configure redirect URIs")}`,
+          `   ${pc.green("•")} developer:manage_api_key   ${pc.dim("— get the app credentials")}`,
+          `   ${pc.green("•")} developer:manage_webhook   ${pc.dim("— set up payment webhooks")}`,
           "",
           `${pc.bold("5.")} Create the key and paste it below`,
+          "",
+          `${pc.dim("This key is used once to set everything up.")}`,
+          `${pc.dim("Your app uses OAuth (openid, profile, email) for user sign-in.")}`,
         ].join("\n"),
-        "Create a Company API Key",
+        "Whop Company API Key",
       );
 
       openUrl("https://whop.com/dashboard/developer");
