@@ -47,9 +47,20 @@ interface DeployPipelineOptions {
 
 function openUrl(url: string): void {
   const platform = process.platform;
-  if (platform === "darwin") exec(`open "${url}"`);
-  else if (platform === "win32") exec(`start "" "${url}"`);
-  else exec(`xdg-open "${url}"`);
+  if (platform === "darwin") {
+    exec(`open "${url}"`);
+  } else if (platform === "win32") {
+    exec(`start "" "${url}"`);
+  } else {
+    // Try WSL first (wslview or cmd.exe), then xdg-open
+    const wsl = exec(`wslview "${url}"`);
+    if (!wsl.success) {
+      const cmd = exec(`cmd.exe /c start "" "${url.replace(/&/g, "^&")}"`);
+      if (!cmd.success) {
+        exec(`xdg-open "${url}"`);
+      }
+    }
+  }
 }
 
 /**
@@ -289,26 +300,44 @@ export async function runDeployPipeline(
       }
       s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
-      // ── Step D: Get App API key from user ────────────────────────
+      // ── Step D: Set OAuth to Public mode ─────────────────────────
       const oauthUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
       const appUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/`;
 
       p.note(
         [
-          `Your app was created! Two quick things:`,
+          `Set your app's OAuth to Public mode:`,
           "",
-          `${pc.bold("1.")} Set OAuth to Public mode (opening now):`,
-          `   ${pc.cyan(oauthUrl)}`,
-          `   Set Client mode to ${pc.bold('"Public"')} and save`,
-          "",
-          `${pc.bold("2.")} Copy your app's environment variables:`,
-          `   ${pc.cyan(appUrl)}`,
-          `   Copy both lines and paste below`,
+          `${pc.bold("1.")} Opening ${pc.cyan(oauthUrl)}`,
+          `${pc.bold("2.")} Set Client mode to ${pc.bold('"Public"')}`,
+          `${pc.bold("3.")} Click Save`,
         ].join("\n"),
-        "Configure App",
+        "Enable OAuth (Public Mode)",
       );
 
       openUrl(oauthUrl);
+
+      const oauthDone = await p.confirm({
+        message: "Have you set OAuth to Public mode?",
+        initialValue: true,
+      });
+      if (p.isCancel(oauthDone)) {
+        return { productionUrl, githubUrl: githubRepoUrl ?? undefined, whopAppId: app.id };
+      }
+
+      // ── Step E: Get App credentials ──────────────────────────────
+      p.note(
+        [
+          `Now copy your app's environment variables:`,
+          "",
+          `${pc.bold("1.")} Go to ${pc.cyan(appUrl)}`,
+          `${pc.bold("2.")} Copy the environment variables shown`,
+          `${pc.bold("3.")} Paste both lines below`,
+        ].join("\n"),
+        "Copy App Credentials",
+      );
+
+      openUrl(appUrl);
 
       let appApiKey = "";
       let appId = app.id;
