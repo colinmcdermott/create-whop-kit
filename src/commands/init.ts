@@ -354,15 +354,16 @@ export default defineCommand({
     let summary = "";
 
     if (deployResult?.productionUrl) {
-      summary += `${pc.green("✓")} Deployed to ${pc.cyan(deployResult.productionUrl)}\n`;
+      if (dbUrl) summary += `${pc.green("✓")} Database connected\n`;
+      summary += `${pc.green("✓")} Deployed to Vercel\n`;
       if (deployResult.whopAppId) summary += `${pc.green("✓")} Whop app: ${deployResult.whopAppId}\n`;
       if (deployResult.webhookSecret) summary += `${pc.green("✓")} Webhooks configured\n`;
-      if (dbUrl) summary += `${pc.green("✓")} Database connected\n`;
+      summary += `\n`;
+      summary += `  ${pc.bold("Production:")} ${pc.cyan(deployResult.productionUrl)}\n`;
+      summary += `  ${pc.bold("Local dev:")}  ${pc.cyan("http://localhost:3000")}\n`;
       summary += `\n`;
       summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
-      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# local development")}\n`;
-      summary += `\n`;
-      summary += `  ${pc.dim(`Production: ${deployResult.productionUrl}`)}`;
+      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start local dev server")}`;
     } else {
       if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;
       if (dbNote) summary += `${pc.yellow("!")} ${dbNote}\n`;

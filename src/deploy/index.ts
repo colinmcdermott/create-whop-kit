@@ -74,24 +74,34 @@ export async function runDeployPipeline(
   }
   p.log.success("Vercel authenticated");
 
-  // ── Step 3: Push DATABASE_URL and initial deploy ────────────────
+  // ── Step 3: Link project to Vercel ──────────────────────────────
+  // Must link before setting env vars, otherwise vars aren't associated
+  p.log.step("Vercel: linking project...");
+  console.log("");
+  const linkOk = execInteractive(`vercel link --yes`, projectDir);
+  console.log("");
+  if (!linkOk) {
+    // First deploy also creates the link, so try deploying directly
+    p.log.warning("Could not link project. Will try deploying directly.");
+  }
+
+  // ── Step 4: Push DATABASE_URL ──────────────────────────────────
   if (databaseUrl) {
     const s = p.spinner();
-    s.start("Setting DATABASE_URL on Vercel...");
+    s.start("Vercel: setting DATABASE_URL...");
     vercelEnvSet("DATABASE_URL", databaseUrl, "production", projectDir);
     vercelEnvSet("DATABASE_URL", databaseUrl, "preview", projectDir);
     vercelEnvSet("DATABASE_URL", databaseUrl, "development", projectDir);
-    s.stop("DATABASE_URL configured");
+    s.stop("DATABASE_URL set on Vercel");
   }
 
+  // ── Step 5: Deploy ─────────────────────────────────────────────
   const productionUrl = await vercelDeploy(projectDir);
   if (!productionUrl) {
     p.log.error("Vercel deployment failed. Try deploying manually:");
     p.log.info(pc.bold(`  cd ${projectName} && vercel deploy --prod`));
     return null;
   }
-
-  p.log.success(`Live at ${pc.cyan(productionUrl)}`);
 
   // ── Step 4: Whop Company API key ────────────────────────────────
   const connectWhop = await p.confirm({
