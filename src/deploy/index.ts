@@ -226,8 +226,9 @@ export async function runDeployPipeline(
         [
           `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
           `${pc.bold("2.")} Under "Company API Keys", click ${pc.bold('"Create"')}`,
-          `${pc.bold("3.")} Name it (e.g. "${projectName}"), click Create`,
-          `${pc.bold("4.")} Copy the key and paste it below`,
+          `${pc.bold("3.")} Name it (e.g. "${projectName}")`,
+          `${pc.bold("4.")} Set "Inherit permissions from role" to ${pc.bold('"Owner"')}`,
+          `${pc.bold("5.")} Click Create, copy the key, and paste it below`,
         ].join("\n"),
         "Whop Company API Key",
       );
