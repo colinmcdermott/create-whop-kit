@@ -156,9 +156,9 @@ export default defineCommand({
       const result = await p.select({
         message: "Which database?",
         options: [
-          { value: "neon", label: "Neon", hint: "Serverless Postgres — auto-provisioned (recommended)" },
-          { value: "prisma-postgres", label: "Prisma Postgres", hint: "Instant database — no account needed" },
-          { value: "supabase", label: "Supabase", hint: "Open-source Firebase alternative" },
+          { value: "neon", label: "Neon (recommended)", hint: "Serverless Postgres — auto-provisioned via CLI" },
+          { value: "supabase", label: "Supabase", hint: "Postgres + Auth + Storage — auto-provisioned via CLI" },
+          { value: "prisma-postgres", label: "Prisma Postgres", hint: "Instant database — no account needed, auto-provisioned" },
           { value: "manual", label: "I have a connection string", hint: "Paste an existing PostgreSQL URL" },
           { value: "later", label: "Configure later", hint: "Skip database setup for now" },
         ],
