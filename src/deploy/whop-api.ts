@@ -10,27 +10,43 @@ function headers(apiKey: string) {
 }
 
 /**
- * Validate a Company API key by making a lightweight API call.
+ * Get the company ID associated with the API key.
+ * Company API keys are scoped to a company — we need the ID for app creation.
  */
-export async function validateApiKey(apiKey: string): Promise<boolean> {
+export async function getCompanyId(apiKey: string): Promise<string | null> {
   try {
-    const res = await fetch(`${WHOP_API}/apps`, {
+    const res = await fetch(`${WHOP_API}/companies`, {
       headers: headers(apiKey),
     });
-    return res.ok;
+    if (!res.ok) return null;
+    const data = await res.json();
+    const companies = data.data || data;
+    if (Array.isArray(companies) && companies.length > 0) {
+      return companies[0].id;
+    }
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 /**
+ * Validate a Company API key by fetching the company.
+ * Returns the company ID if valid, null otherwise.
+ */
+export async function validateApiKey(apiKey: string): Promise<string | null> {
+  return getCompanyId(apiKey);
+}
+
+/**
  * Create a Whop OAuth app.
- * Returns the app ID and client_secret (which is the WHOP_API_KEY for the app).
+ * Returns the app ID and client_secret.
  */
 export async function createWhopApp(
   apiKey: string,
   name: string,
   redirectUris: string[],
+  companyId: string,
 ): Promise<WhopAppResult | null> {
   try {
     const res = await fetch(`${WHOP_API}/apps`, {
@@ -38,6 +54,7 @@ export async function createWhopApp(
       headers: headers(apiKey),
       body: JSON.stringify({
         name,
+        company_id: companyId,
         redirect_uris: redirectUris,
       }),
     });
@@ -61,12 +78,12 @@ export async function createWhopApp(
 
 /**
  * Create a webhook endpoint on the user's company.
- * Returns the webhook ID and signing secret.
  */
 export async function createWhopWebhook(
   apiKey: string,
   url: string,
   events: string[],
+  companyId: string,
 ): Promise<WhopWebhookResult | null> {
   try {
     const res = await fetch(`${WHOP_API}/webhooks`, {
@@ -75,6 +92,7 @@ export async function createWhopWebhook(
       body: JSON.stringify({
         url,
         events,
+        company_id: companyId,
       }),
     });
 
@@ -92,26 +110,5 @@ export async function createWhopWebhook(
   } catch (err) {
     console.error("[Whop API] Create webhook error:", err);
     return null;
-  }
-}
-
-/**
- * List existing apps to check for duplicates.
- */
-export async function listWhopApps(
-  apiKey: string,
-): Promise<Array<{ id: string; name: string }>> {
-  try {
-    const res = await fetch(`${WHOP_API}/apps`, {
-      headers: headers(apiKey),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.data || []).map((app: { id: string; name: string }) => ({
-      id: app.id,
-      name: app.name,
-    }));
-  } catch {
-    return [];
   }
 }

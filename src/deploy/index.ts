@@ -232,6 +232,7 @@ export async function runDeployPipeline(
           `${pc.bold("3.")} Name it anything (e.g. "${projectName}")`,
           "",
           `${pc.bold("4.")} Select these permissions:`,
+          `   ${pc.green("•")} company:basic:read         ${pc.dim("— identify your company")}`,
           `   ${pc.green("•")} developer:create_app       ${pc.dim("— create the OAuth app")}`,
           `   ${pc.green("•")} developer:update_app       ${pc.dim("— configure redirect URIs")}`,
           `   ${pc.green("•")} developer:manage_api_key   ${pc.dim("— get the app credentials")}`,
@@ -260,35 +261,35 @@ export async function runDeployPipeline(
         apiKey = result;
       }
 
-      // Validate
+      // Validate key and get company ID
       const s = p.spinner();
       s.start("Validating API key...");
-      const keyValid = await validateApiKey(apiKey);
-      if (!keyValid) {
+      const companyId = await validateApiKey(apiKey);
+      if (!companyId) {
         s.stop("Invalid API key");
-        p.log.error("Check permissions: developer:create_app, developer:manage_api_key, developer:manage_webhook");
+        p.log.error("Check that the key has permissions: developer:create_app, developer:manage_api_key, developer:manage_webhook, company:basic:read");
         return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
       }
-      s.stop("API key valid");
+      s.stop(`API key valid (company: ${pc.dim(companyId)})`);
 
-      // Create OAuth app
+      // Step 1: Create OAuth app (with redirect URIs for localhost + production)
       const redirectUris = [
         "http://localhost:3000/api/auth/callback",
         `${productionUrl}/api/auth/callback`,
       ];
 
       s.start("Creating Whop OAuth app...");
-      const app = await createWhopApp(apiKey, projectName, redirectUris);
+      const app = await createWhopApp(apiKey, projectName, redirectUris, companyId);
       if (!app) {
-        s.stop("Failed");
+        s.stop("Failed to create app");
         p.log.error("Create manually: " + pc.cyan("https://whop.com/dashboard/developer"));
         return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
       }
       s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
-      // Create webhook
+      // Step 2: Create webhook endpoint
       s.start("Creating webhook...");
-      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS);
+      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS, companyId);
       if (!webhook) {
         s.stop("Failed (create manually in Whop dashboard)");
       } else {
