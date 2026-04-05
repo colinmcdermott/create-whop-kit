@@ -39,45 +39,66 @@ export async function ghLogin(): Promise<boolean> {
 /**
  * Create a private GitHub repo from the current project directory and push.
  * Returns the repo URL (e.g. "https://github.com/user/my-app").
+ *
+ * Uses a two-step approach: create repo first (without --push), then push
+ * separately. This avoids the GitHub propagation delay that causes
+ * `--push` to fail with "Repository not found" even though the repo exists.
  */
 export async function createGitHubRepo(
   projectDir: string,
   projectName: string,
 ): Promise<string | null> {
-  const s = p.spinner();
+  let s = p.spinner();
   s.start("Creating private GitHub repository...");
 
-  const result = exec(
-    `gh repo create ${projectName} --private --source=. --push`,
+  // Step 1: Create the repo (without pushing — avoids propagation delay issues)
+  const createResult = exec(
+    `gh repo create ${projectName} --private --source=.`,
     projectDir,
     60_000,
   );
 
-  if (!result.success) {
-    // Might fail if repo already exists — try just pushing
-    s.stop("Could not create repo");
-    const stderr = result.stderr || result.stdout;
+  if (!createResult.success) {
+    const stderr = createResult.stderr || createResult.stdout;
     if (stderr.includes("already exists")) {
-      p.log.warning(`Repository "${projectName}" already exists on GitHub.`);
-      // Try to set remote and push
+      s.stop(`Repository "${projectName}" already exists`);
+      // Set remote if not already set
       exec(`git remote add origin https://github.com/$(gh api user --jq .login)/${projectName}.git`, projectDir);
-      const pushResult = exec("git push -u origin main", projectDir, 30_000);
-      if (pushResult.success) {
-        const remote = exec("gh repo view --json url --jq .url", projectDir);
-        return remote.success ? remote.stdout.trim() : null;
-      }
+    } else {
+      s.stop("Could not create GitHub repo");
+      if (stderr) p.log.error(pc.dim(stderr.substring(0, 200)));
+      return null;
     }
-    return null;
+  } else {
+    s.stop("GitHub repo created");
+  }
+
+  // Step 2: Push code (retry once if GitHub hasn't propagated yet)
+  s = p.spinner();
+  s.start("Pushing code to GitHub...");
+
+  let pushOk = exec("git push -u origin main", projectDir, 30_000).success;
+  if (!pushOk) {
+    // GitHub can take a moment to propagate — wait 3 seconds and retry
+    s.stop("Push failed, retrying...");
+    await new Promise((r) => setTimeout(r, 3000));
+    s = p.spinner();
+    s.start("Retrying push...");
+    pushOk = exec("git push -u origin main", projectDir, 30_000).success;
+  }
+
+  if (!pushOk) {
+    s.stop("Could not push (push manually with: git push -u origin main)");
+  } else {
+    s.stop("Code pushed to GitHub");
   }
 
   // Get the repo URL
   const repoUrl = exec("gh repo view --json url --jq .url", projectDir);
-  if (repoUrl.success) {
-    s.stop(`GitHub repo created: ${pc.cyan(repoUrl.stdout.trim())}`);
+  if (repoUrl.success && repoUrl.stdout.trim()) {
     return repoUrl.stdout.trim();
   }
 
-  s.stop("GitHub repo created");
   return `https://github.com/${projectName}`;
 }
 
