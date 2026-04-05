@@ -4,6 +4,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { defineCommand } from "citty";
 import { TEMPLATES, APP_TYPES, DB_OPTIONS } from "../templates.js";
+import { DB_PROVIDERS } from "../providers/index.js";
 import { checkNodeVersion, checkGit, validateDatabaseUrl, validateWhopAppId } from "../utils/checks.js";
 import { detectPackageManager, exec } from "../utils/exec.js";
 import { cleanupDir } from "../utils/cleanup.js";
@@ -144,22 +145,61 @@ export default defineCommand({
     if (!database) {
       const result = await p.select({
         message: "Which database?",
-        options: Object.entries(DB_OPTIONS).map(([value, d]) => ({
-          value,
-          label: d.name,
-          hint: d.description,
-        })),
+        options: [
+          { value: "neon", label: "Neon", hint: "Serverless Postgres — auto-provisioned (recommended)" },
+          { value: "prisma-postgres", label: "Prisma Postgres", hint: "Instant database — no account needed" },
+          { value: "supabase", label: "Supabase", hint: "Open-source Firebase alternative" },
+          { value: "manual", label: "I have a connection string", hint: "Paste an existing PostgreSQL URL" },
+          { value: "later", label: "Configure later", hint: "Skip database setup for now" },
+        ],
       });
       if (isCancelled(result)) { p.cancel("Cancelled."); process.exit(0); }
       database = result;
     }
 
-    // ── Database URL ──────────────────────────────────────────────────
+    // ── Database provisioning ─────────────────────────────────────────
     let dbUrl = args["db-url"] ?? "";
-    if (database !== "later" && !dbUrl) {
+    let dbNote = "";
+
+    if (database !== "later" && database !== "manual" && !dbUrl) {
+      // Auto-provision via provider
+      const provider = DB_PROVIDERS[database];
+      if (provider) {
+        // Install CLI if needed
+        if (!provider.isInstalled()) {
+          const install = await p.confirm({
+            message: `${provider.name} CLI not found. Install it now?`,
+            initialValue: true,
+          });
+          if (isCancelled(install) || !install) {
+            p.log.warning("Skipping database provisioning. You can configure it later.");
+            database = "later";
+          } else {
+            const installed = await provider.install();
+            if (!installed) {
+              p.log.warning("Skipping database provisioning.");
+              database = "later";
+            }
+          }
+        }
+
+        // Provision database
+        if (database !== "later") {
+          const result = await provider.provision(projectName);
+          if (result) {
+            dbUrl = result.connectionString;
+            if (result.note) dbNote = result.note;
+            p.log.success(`${pc.bold(provider.name)} database ready`);
+          } else {
+            p.log.warning("Database provisioning skipped. Configure manually later.");
+          }
+        }
+      }
+    } else if (database === "manual" && !dbUrl) {
+      // Manual URL entry
       const result = await p.text({
         message: "Database URL",
-        placeholder: DB_OPTIONS[database]?.envVarHint ?? "postgresql://...",
+        placeholder: "postgresql://user:pass@host:5432/dbname",
         validate: (v) => {
           if (!v) return "Required (choose 'Configure later' to skip)";
           return validateDatabaseUrl(v);
@@ -305,6 +345,9 @@ export default defineCommand({
     if (missing.length > 0) {
       summary += `${pc.yellow("○")} Missing: ${missing.join(", ")}\n`;
       summary += `  ${pc.dim("Configure via the setup wizard or .env.local")}\n`;
+    }
+    if (dbNote) {
+      summary += `${pc.yellow("!")} ${dbNote}\n`;
     }
     summary += `\n`;
     summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
