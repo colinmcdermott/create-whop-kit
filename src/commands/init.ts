@@ -367,9 +367,7 @@ export default defineCommand({
     let deployResult = null;
     let deployAttempted = false;
     if (!args["skip-deploy"] && !args["dry-run"]) {
-      const deployChoice = isNonInteractive
-        ? "local"
-        : await p.select({
+      const deployChoice = await p.select({
             message: "What would you like to do next?",
             options: [
               {
