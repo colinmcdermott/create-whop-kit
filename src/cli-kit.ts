@@ -3,13 +3,14 @@ import add from "./commands/add.js";
 import status from "./commands/status.js";
 import env from "./commands/env.js";
 import catalog from "./commands/catalog.js";
+import deploy from "./commands/deploy.js";
 import open from "./commands/open.js";
 import upgrade from "./commands/upgrade.js";
 
 const main = defineCommand({
   meta: {
     name: "whop-kit",
-    version: "0.5.0",
+    version: "0.6.0",
     description: "Manage your Whop project",
   },
   subCommands: {
@@ -17,6 +18,7 @@ const main = defineCommand({
     status,
     env,
     catalog,
+    deploy,
     open,
     upgrade,
   },

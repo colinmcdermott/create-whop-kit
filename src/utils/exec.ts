@@ -32,6 +32,25 @@ export function execInteractive(cmd: string, cwd?: string): boolean {
   }
 }
 
+/**
+ * Run a command and pipe input to stdin.
+ * Used for `vercel env add` which reads the value from stdin.
+ */
+export function execWithStdin(cmd: string, input: string, cwd?: string): ExecResult {
+  try {
+    const stdout = execSync(cmd, {
+      cwd,
+      input,
+      stdio: ["pipe", "pipe", "pipe"],
+      encoding: "utf-8",
+      timeout: 120_000,
+    }).trim();
+    return { stdout, success: true };
+  } catch {
+    return { stdout: "", success: false };
+  }
+}
+
 export function hasCommand(cmd: string): boolean {
   return exec(`which ${cmd}`).success;
 }

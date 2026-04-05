@@ -69,6 +69,15 @@ export default defineCommand({
       description: "Show what would be created without doing it",
       default: false,
     },
+    "skip-deploy": {
+      type: "boolean",
+      description: "Skip Vercel deployment",
+      default: false,
+    },
+    "whop-company-key": {
+      type: "string",
+      description: "Whop Company API key for automatic app creation",
+    },
     verbose: {
       type: "boolean",
       description: "Show detailed output",
@@ -316,38 +325,59 @@ export default defineCommand({
     // ── Git init ──────────────────────────────────────────────────────
     initGit(projectDir);
 
+    // ── Deploy to Vercel ─────────────────────────────────────────────
+    let deployResult = null;
+    if (!args["skip-deploy"] && !args["dry-run"]) {
+      const shouldDeploy = isNonInteractive
+        ? false // non-interactive skips deploy unless explicitly enabled
+        : await (async () => {
+            const result = await p.confirm({
+              message: "Deploy to Vercel and connect to Whop?",
+              initialValue: true,
+            });
+            return !isCancelled(result) && result;
+          })();
+
+      if (shouldDeploy) {
+        const { runDeployPipeline } = await import("../deploy/index.js");
+        deployResult = await runDeployPipeline({
+          projectDir,
+          projectName,
+          databaseUrl: dbUrl || undefined,
+          framework,
+          whopCompanyKey: args["whop-company-key"],
+        });
+      }
+    }
+
     // ── Summary ───────────────────────────────────────────────────────
-    const configured: string[] = [];
-    const missing: string[] = [];
-
-    if (dbUrl) configured.push("Database");
-    else missing.push("Database URL");
-
-    if (appId) configured.push("Whop App ID");
-    else missing.push("Whop App ID");
-
-    if (apiKey) configured.push("Whop API Key");
-    else missing.push("Whop API Key");
-
-    if (webhookSecret) configured.push("Webhook Secret");
-    else missing.push("Webhook Secret");
-
     let summary = "";
-    if (configured.length > 0) {
-      summary += `${pc.green("✓")} ${configured.join(", ")}\n`;
+
+    if (deployResult?.productionUrl) {
+      summary += `${pc.green("✓")} Deployed to ${pc.cyan(deployResult.productionUrl)}\n`;
+      if (deployResult.whopAppId) summary += `${pc.green("✓")} Whop app: ${deployResult.whopAppId}\n`;
+      if (deployResult.webhookSecret) summary += `${pc.green("✓")} Webhooks configured\n`;
+      if (dbUrl) summary += `${pc.green("✓")} Database connected\n`;
+      summary += `\n`;
+      summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
+      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# local development")}\n`;
+      summary += `\n`;
+      summary += `  ${pc.dim(`Production: ${deployResult.productionUrl}`)}`;
+    } else {
+      if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;
+      if (dbNote) summary += `${pc.yellow("!")} ${dbNote}\n`;
+      summary += `\n`;
+      summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
+      if (dbUrl) {
+        summary += `  ${pc.bold(`${pm} run db:push`)}   ${pc.dim("# push schema to database")}\n`;
+      }
+      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start dev server")}\n`;
+      summary += `\n`;
+      summary += `  ${pc.dim("Open http://localhost:3000 — the setup wizard will")}\n`;
+      summary += `  ${pc.dim("walk you through connecting your Whop app.")}\n`;
+      summary += `\n`;
+      summary += `  ${pc.dim(`Or run ${pc.bold("whop-kit deploy")} to deploy + auto-configure.`)}`;
     }
-    if (dbNote) {
-      summary += `${pc.yellow("!")} ${dbNote}\n`;
-    }
-    summary += `\n`;
-    summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
-    if (dbUrl) {
-      summary += `  ${pc.bold(`${pm} run db:push`)}   ${pc.dim("# push schema to database")}\n`;
-    }
-    summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start dev server")}\n`;
-    summary += `\n`;
-    summary += `  ${pc.dim("Open http://localhost:3000 — the setup wizard will")}\n`;
-    summary += `  ${pc.dim("walk you through connecting your Whop app.")}`;
 
     p.note(summary, "Your app is ready");
 
