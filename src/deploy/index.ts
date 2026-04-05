@@ -28,12 +28,13 @@ import {
 import type { DeployResult } from "./types.js";
 
 const WEBHOOK_EVENTS = [
-  "membership.activated",
-  "membership.deactivated",
-  "membership.cancel_at_period_end_changed",
   "payment.succeeded",
   "payment.failed",
+  "payment.pending",
+  "payment.created",
+  "membership.cancel_at_period_end_changed",
   "refund.created",
+  "dispute.created",
 ];
 
 interface DeployPipelineOptions {

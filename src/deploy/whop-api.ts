@@ -105,14 +105,14 @@ export async function createWhopWebhook(
     const res = await fetch(`${WHOP_API}/webhooks`, {
       method: "POST",
       headers: headers(apiKey),
-      body: JSON.stringify({ url, events, company_id: companyId }),
+      body: JSON.stringify({ url, events, resource_id: companyId }),
     });
 
     if (res.ok) {
       const data = await res.json();
       return {
         id: data.id,
-        secret: data.secret || data.signing_secret || data.webhook_secret || "",
+        secret: data.webhook_secret || data.secret || data.signing_secret || "",
       };
     }
 
