@@ -99,7 +99,7 @@ export default defineCommand({
     if (!projectName) {
       const result = await p.text({
         message: "Project name",
-        placeholder: "my-cool-project",
+        placeholder: "my-app",
         validate: (v) => {
           if (!v) return "Project name is required";
           if (existsSync(resolve(v))) return `Directory "${v}" already exists`;
