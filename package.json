@@ -1,6 +1,6 @@
 {
   "name": "create-whop-kit",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Scaffold and manage Whop-powered apps with whop-kit",
   "type": "module",
   "license": "MIT",

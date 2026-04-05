@@ -21,6 +21,7 @@ import {
 } from "./github.js";
 import {
   validateApiKey,
+  getCompanyId,
   createWhopApp,
   createWhopWebhook,
 } from "./whop-api.js";
@@ -220,22 +221,19 @@ export async function runDeployPipeline(
     });
 
     if (!p.isCancel(connectWhop) && connectWhop) {
+      // ── Step A: Get Company API key ──────────────────────────────
       p.note(
         [
-          `We need a Company API key to set up OAuth and webhooks.`,
-          "",
           `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
-          `${pc.bold("2.")} Click ${pc.bold('"Create"')} under "Company API Keys"`,
-          `${pc.bold("3.")} Give it a name (e.g. "${projectName}")`,
-          `${pc.bold("4.")} Click Create and copy the key`,
-          `${pc.bold("5.")} Paste it below`,
+          `${pc.bold("2.")} Under "Company API Keys", click ${pc.bold('"Create"')}`,
+          `${pc.bold("3.")} Name it (e.g. "${projectName}"), click Create`,
+          `${pc.bold("4.")} Copy the key and paste it below`,
         ].join("\n"),
         "Whop Company API Key",
       );
 
       openUrl("https://whop.com/dashboard/developer");
 
-      // Retry loop — let user paste a new key if validation fails
       let apiKey = options.whopCompanyKey ?? "";
       let keyValid = false;
 
@@ -245,8 +243,8 @@ export async function runDeployPipeline(
             message: attempt === 0
               ? "Paste your Company API key"
               : "Paste a new Company API key",
-            placeholder: "paste the key here...",
-            validate: (v) => (!v ? "API key is required" : undefined),
+            placeholder: "apik_...",
+            validate: (v) => (!v ? "Required" : undefined),
           });
           if (p.isCancel(result)) {
             return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
@@ -254,62 +252,76 @@ export async function runDeployPipeline(
           apiKey = result;
         }
 
-        const s = p.spinner();
-        s.start("Validating API key...");
+        let s = p.spinner();
+        s.start("Validating...");
         keyValid = await validateApiKey(apiKey);
-
-        if (keyValid) {
-          s.stop("API key valid");
-          break;
-        }
-
+        if (keyValid) { s.stop("API key valid"); break; }
         s.stop("API key invalid");
 
         if (attempt < 2) {
-          const retry = await p.confirm({
-            message: "Try a different key?",
-            initialValue: true,
-          });
-          if (p.isCancel(retry) || !retry) {
-            return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
-          }
+          const retry = await p.confirm({ message: "Try a different key?", initialValue: true });
+          if (p.isCancel(retry) || !retry) return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
           apiKey = "";
-        } else {
-          p.log.error("Could not validate. Configure Whop manually via the setup wizard.");
-          return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
         }
       }
 
-      if (!keyValid) {
-        return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
-      }
+      if (!keyValid) return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
 
-      // Step 1: Create OAuth app (with redirect URIs for localhost + production)
+      // ── Step B: Get Company ID ───────────────────────────────────
+      const companyId = await getCompanyId(apiKey);
+      if (!companyId) return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+
+      // ── Step C: Create OAuth app ─────────────────────────────────
       const redirectUris = [
         "http://localhost:3000/api/auth/callback",
         `${productionUrl}/api/auth/callback`,
       ];
 
-      const s = p.spinner();
+      let s = p.spinner();
       s.start("Creating Whop OAuth app...");
-      const app = await createWhopApp(apiKey, projectName, redirectUris);
+      const app = await createWhopApp(apiKey, projectName, redirectUris, companyId);
       if (!app) {
         s.stop("Failed to create app");
-        p.log.error("Create manually: " + pc.cyan("https://whop.com/dashboard/developer"));
+        p.log.error("Create manually in the Whop dashboard.");
         return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
       }
       s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
-      // Step 2: Create webhook endpoint
+      // ── Step D: Get App API key from user ────────────────────────
+      // The create API doesn't return the app's API key — user must copy it from dashboard
+      p.note(
+        [
+          `Your app ${pc.bold(app.id)} was created. Now get its API key:`,
+          "",
+          `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
+          `${pc.bold("2.")} Click on your new app "${projectName}"`,
+          `${pc.bold("3.")} Find ${pc.bold("WHOP_API_KEY")} in the Environment Variables section`,
+          `${pc.bold("4.")} Click reveal, copy it, and paste below`,
+        ].join("\n"),
+        "App API Key",
+      );
+
+      openUrl("https://whop.com/dashboard/developer");
+
+      let appApiKey = "";
+      const appKeyResult = await p.text({
+        message: "Paste the App API key (WHOP_API_KEY)",
+        placeholder: "starts with apik_...",
+        validate: (v) => (!v ? "Required — find it in the app's Environment Variables" : undefined),
+      });
+      if (!p.isCancel(appKeyResult)) appApiKey = appKeyResult;
+
+      // ── Step E: Create webhook ───────────────────────────────────
+      s = p.spinner();
       s.start("Creating webhook...");
-      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS);
+      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS, companyId);
       if (!webhook) {
         s.stop("Failed (create manually in Whop dashboard)");
       } else {
         s.stop("Webhook created");
       }
 
-      // Push Whop env vars to Vercel
+      // ── Step F: Push env vars to Vercel ──────────────────────────
       if (useVercel) {
         const envVars: Record<string, string> = {};
         if (framework === "nextjs") {
@@ -317,10 +329,11 @@ export async function runDeployPipeline(
         } else {
           envVars["WHOP_APP_ID"] = app.id;
         }
-        envVars["WHOP_API_KEY"] = app.client_secret;
+        if (appApiKey) envVars["WHOP_API_KEY"] = appApiKey;
         if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
 
         for (const [key, value] of Object.entries(envVars)) {
+          if (!value) continue;
           const vs = p.spinner();
           vs.start(`Pushing ${key}...`);
           vercelEnvSet(key, value, "production", projectDir);
@@ -330,6 +343,7 @@ export async function runDeployPipeline(
         }
 
         // Redeploy
+        s = p.spinner();
         s.start("Redeploying with full configuration...");
         const redeploy = exec("vercel deploy --prod --yes", projectDir, 300_000);
         s.stop(redeploy.success ? "Redeployed" : "Redeploy pending — will apply on next git push");
@@ -339,7 +353,7 @@ export async function runDeployPipeline(
         productionUrl,
         githubUrl: githubRepoUrl ?? undefined,
         whopAppId: app.id,
-        whopApiKey: app.client_secret,
+        whopApiKey: appApiKey || undefined,
         webhookSecret: webhook?.secret,
       };
     }
