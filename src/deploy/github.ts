@@ -73,24 +73,28 @@ export async function createGitHubRepo(
     s.stop("GitHub repo created");
   }
 
-  // Step 2: Push code (retry with increasing delay — GitHub propagation can take 5-10s)
+  // Step 2: Detect branch name and push
   s = p.spinner();
   s.start("Pushing code to GitHub...");
 
+  // Detect the current branch name (main or master)
+  const branchResult = exec("git branch --show-current", projectDir);
+  const branch = branchResult.success ? branchResult.stdout.trim() : "main";
+
   let pushOk = false;
-  for (const delay of [0, 5000, 10000]) {
+  for (const delay of [0, 3000, 7000]) {
     if (delay > 0) {
-      s.stop(`Waiting for GitHub to propagate (${delay / 1000}s)...`);
+      s.stop(`Waiting for GitHub to propagate...`);
       await new Promise((r) => setTimeout(r, delay));
       s = p.spinner();
       s.start("Pushing code to GitHub...");
     }
-    pushOk = exec("git push -u origin main", projectDir, 30_000).success;
+    pushOk = exec(`git push -u origin ${branch}`, projectDir, 30_000).success;
     if (pushOk) break;
   }
 
   if (!pushOk) {
-    s.stop("Could not push (push manually with: git push -u origin main)");
+    s.stop(`Could not push (try manually: git push -u origin ${branch})`);
   } else {
     s.stop("Code pushed to GitHub");
   }

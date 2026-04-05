@@ -31,6 +31,7 @@ export function updatePackageName(projectDir: string, name: string): void {
 
 export function initGit(projectDir: string): void {
   exec("git init", projectDir);
+  exec("git branch -m main", projectDir);
   exec("git add -A", projectDir);
   exec('git commit -m "initial: scaffolded with create-whop-kit"', projectDir);
 }
