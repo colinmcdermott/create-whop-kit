@@ -351,13 +351,17 @@ export async function runDeployPipeline(
       // ── Step F: Push env vars to Vercel ──────────────────────────
       if (useVercel) {
         const envVars: Record<string, string> = {};
+
+        // Use the appId from user paste (may differ from API-created app.id)
         if (framework === "nextjs") {
-          envVars["NEXT_PUBLIC_WHOP_APP_ID"] = app.id;
+          envVars["NEXT_PUBLIC_WHOP_APP_ID"] = appId;
         } else {
-          envVars["WHOP_APP_ID"] = app.id;
+          envVars["WHOP_APP_ID"] = appId;
         }
         if (appApiKey) envVars["WHOP_API_KEY"] = appApiKey;
         if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
+        // Set app URL so the template knows its own domain
+        envVars["NEXT_PUBLIC_APP_URL"] = productionUrl;
 
         for (const [key, value] of Object.entries(envVars)) {
           if (!value) continue;
