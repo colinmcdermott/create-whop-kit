@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { defineCommand } from "citty";
-import { TEMPLATES, APP_TYPES, DB_OPTIONS } from "../templates.js";
+import { FRAMEWORKS, APP_TYPES, getTemplate } from "../templates.js";
 import { DB_PROVIDERS } from "../providers/index.js";
 import { checkNodeVersion, checkGit, validateDatabaseUrl, validateWhopAppId } from "../utils/checks.js";
 import { detectPackageManager, exec } from "../utils/exec.js";
@@ -123,20 +123,20 @@ export default defineCommand({
     if (!framework) {
       const result = await p.select({
         message: "Which framework?",
-        options: Object.entries(TEMPLATES).map(([value, t]) => ({
+        options: Object.entries(FRAMEWORKS).map(([value, f]) => ({
           value,
-          label: t.available ? t.name : `${t.name} ${pc.dim("(coming soon)")}`,
-          hint: t.description,
-          disabled: !t.available,
+          label: f.available ? f.name : `${f.name} ${pc.dim("(coming soon)")}`,
+          hint: f.description,
+          disabled: !f.available,
         })),
       });
       if (isCancelled(result)) { p.cancel("Cancelled."); process.exit(0); }
       framework = result;
     }
 
-    const template = TEMPLATES[framework];
+    const template = getTemplate(appType, framework);
     if (!template || !template.available) {
-      p.log.error(`Framework "${framework}" is not available. Options: ${Object.keys(TEMPLATES).filter(k => TEMPLATES[k].available).join(", ")}`);
+      p.log.error(`No template available for ${appType} + ${framework}. Try a different combination.`);
       process.exit(1);
     }
 
@@ -254,7 +254,7 @@ export default defineCommand({
       console.log(`  ${pc.bold("Project:")}     ${projectName}`);
       console.log(`  ${pc.bold("Framework:")}   ${template.name}`);
       console.log(`  ${pc.bold("App type:")}    ${APP_TYPES[appType]?.name ?? appType}`);
-      console.log(`  ${pc.bold("Database:")}    ${DB_OPTIONS[database]?.name ?? database}`);
+      console.log(`  ${pc.bold("Database:")}    ${database}`);
       console.log(`  ${pc.bold("Template:")}    github.com/${template.repo}`);
       if (dbUrl) console.log(`  ${pc.bold("DB URL:")}      ${dbUrl.substring(0, 30)}...`);
       if (appId) console.log(`  ${pc.bold("Whop App:")}    ${appId}`);

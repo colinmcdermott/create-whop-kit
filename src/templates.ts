@@ -17,37 +17,67 @@ export interface DbOption {
   envVarHint: string;
 }
 
-export const TEMPLATES: Record<string, Template> = {
+export const FRAMEWORKS: Record<string, { name: string; description: string; available: boolean }> = {
   nextjs: {
     name: "Next.js",
     description: "Full-stack React with App Router, SSR, and API routes",
-    repo: "colinmcdermott/whop-saas-starter-v2",
     available: true,
   },
   astro: {
     name: "Astro",
     description: "Content-focused with islands architecture",
-    repo: "colinmcdermott/whop-astro-starter",
     available: true,
   },
   tanstack: {
     name: "TanStack Start",
     description: "Full-stack React with TanStack Router",
-    repo: "",
     available: false,
   },
   vite: {
     name: "Vite + React",
     description: "Lightweight SPA with Vite bundler",
-    repo: "",
     available: false,
   },
 };
+
+/**
+ * Template registry keyed by "{appType}:{framework}".
+ * Falls back to "{appType}:nextjs" if the specific combo doesn't exist.
+ */
+export const TEMPLATES: Record<string, Template> = {
+  "saas:nextjs": {
+    name: "Next.js SaaS",
+    description: "Full SaaS with dashboard, pricing, billing, and docs",
+    repo: "colinmcdermott/whop-saas-starter-v2",
+    available: true,
+  },
+  "saas:astro": {
+    name: "Astro SaaS",
+    description: "SaaS with auth, payments, and webhooks",
+    repo: "colinmcdermott/whop-astro-starter",
+    available: true,
+  },
+  "blank:nextjs": {
+    name: "Next.js Blank",
+    description: "Just auth + webhooks — build anything",
+    repo: "colinmcdermott/whop-blank-starter",
+    available: true,
+  },
+};
+
+export function getTemplate(appType: string, framework: string): Template | null {
+  return TEMPLATES[`${appType}:${framework}`] ?? null;
+}
 
 export const APP_TYPES: Record<string, AppType> = {
   saas: {
     name: "SaaS",
     description: "Subscription tiers, dashboard, billing portal",
+    available: true,
+  },
+  blank: {
+    name: "Blank",
+    description: "Just auth + payments, you build the rest",
     available: true,
   },
   course: {
@@ -58,11 +88,6 @@ export const APP_TYPES: Record<string, AppType> = {
   community: {
     name: "Community",
     description: "Member feeds, gated content, roles",
-    available: false,
-  },
-  blank: {
-    name: "Blank",
-    description: "Just auth + payments, you build the rest",
     available: false,
   },
 };
