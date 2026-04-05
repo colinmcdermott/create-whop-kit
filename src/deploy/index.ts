@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec } from "../utils/exec.js";
+import { exec, execInteractive } from "../utils/exec.js";
 import {
   installOrUpdateVercel,
   isVercelAuthenticated,
@@ -378,11 +378,16 @@ export async function runDeployPipeline(
           vs.stop(`${key} ✓`);
         }
 
-        // Redeploy
-        s = p.spinner();
-        s.start("Redeploying with full configuration...");
-        const redeploy = exec("vercel deploy --prod --yes", projectDir, 300_000);
-        s.stop(redeploy.success ? "Redeployed" : "Redeploy pending — will apply on next git push");
+        // Redeploy — show live build output
+        p.log.step("Redeploying with full configuration...");
+        console.log("");
+        const redeployOk = execInteractive("vercel deploy --prod --yes", projectDir);
+        console.log("");
+        if (redeployOk) {
+          p.log.success("Redeployed");
+        } else {
+          p.log.warning("Redeploy failed — will apply on next git push");
+        }
       }
 
       return {
