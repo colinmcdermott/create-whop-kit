@@ -211,43 +211,13 @@ export default defineCommand({
     }
 
     // ── Whop credentials ──────────────────────────────────────────────
-    let appId = args["app-id"] ?? "";
-    let apiKey = args["api-key"] ?? "";
-    let webhookSecret = args["webhook-secret"] ?? "";
-
-    if (!isNonInteractive && !args.yes) {
-      const setupWhop = await p.confirm({
-        message: "Configure Whop credentials now? (you can do this later via the setup wizard)",
-        initialValue: false,
-      });
-
-      if (!isCancelled(setupWhop) && setupWhop) {
-        if (!appId) {
-          const result = await p.text({
-            message: "Whop App ID",
-            placeholder: "app_xxxxxxxxx",
-            validate: (v) => v ? validateWhopAppId(v) : undefined,
-          });
-          if (!isCancelled(result)) appId = result ?? "";
-        }
-
-        if (!apiKey) {
-          const result = await p.text({
-            message: "Whop API Key",
-            placeholder: "apik_xxxxxxxxx (optional, press Enter to skip)",
-          });
-          if (!isCancelled(result)) apiKey = result ?? "";
-        }
-
-        if (!webhookSecret) {
-          const result = await p.text({
-            message: "Whop Webhook Secret",
-            placeholder: "optional, press Enter to skip",
-          });
-          if (!isCancelled(result)) webhookSecret = result ?? "";
-        }
-      }
-    }
+    // Credentials are accepted via flags for CI/automation but NOT
+    // prompted interactively. The setup wizard at localhost:3000
+    // handles this with proper step-by-step guidance (create app →
+    // get callback URL → configure webhooks → get secret).
+    const appId = args["app-id"] ?? "";
+    const apiKey = args["api-key"] ?? "";
+    const webhookSecret = args["webhook-secret"] ?? "";
 
     // ── Dry run ───────────────────────────────────────────────────────
     if (args["dry-run"]) {
@@ -366,10 +336,6 @@ export default defineCommand({
     if (configured.length > 0) {
       summary += `${pc.green("✓")} ${configured.join(", ")}\n`;
     }
-    if (missing.length > 0) {
-      summary += `${pc.yellow("○")} Missing: ${missing.join(", ")}\n`;
-      summary += `  ${pc.dim("The setup wizard at http://localhost:3000 will guide you through it")}\n`;
-    }
     if (dbNote) {
       summary += `${pc.yellow("!")} ${dbNote}\n`;
     }
@@ -380,7 +346,8 @@ export default defineCommand({
     }
     summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start dev server")}\n`;
     summary += `\n`;
-    summary += `  ${pc.dim("Then open http://localhost:3000")}`;
+    summary += `  ${pc.dim("Open http://localhost:3000 — the setup wizard will")}\n`;
+    summary += `  ${pc.dim("walk you through connecting your Whop app.")}`;
 
     p.note(summary, "Your app is ready");
 
