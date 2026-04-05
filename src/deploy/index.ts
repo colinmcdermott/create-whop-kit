@@ -3,9 +3,11 @@ import pc from "picocolors";
 import { exec, execInteractive } from "../utils/exec.js";
 import {
   isVercelInstalled,
-  installVercel,
+  installOrUpdateVercel,
   isVercelAuthenticated,
+  getVercelUser,
   vercelLogin,
+  vercelLink,
   vercelDeploy,
   vercelEnvSet,
   vercelEnvSetBatch,
@@ -52,36 +54,24 @@ export async function runDeployPipeline(
 ): Promise<DeployResult | null> {
   const { projectDir, projectName, databaseUrl, framework } = options;
 
-  // ── Step 1: Vercel CLI ──────────────────────────────────────────
-  if (!isVercelInstalled()) {
-    const install = await p.confirm({
-      message: "Vercel CLI not found. Install it now?",
-      initialValue: true,
-    });
-    if (p.isCancel(install) || !install) return null;
-
-    const ok = await installVercel();
-    if (!ok) return null;
-  }
+  // ── Step 1: Install / update Vercel CLI ─────────────────────────
+  const ok = await installOrUpdateVercel();
+  if (!ok) return null;
 
   // ── Step 2: Vercel auth ─────────────────────────────────────────
   if (!isVercelAuthenticated()) {
-    const ok = await vercelLogin();
-    if (!ok) {
+    const loginOk = await vercelLogin();
+    if (!loginOk) {
       p.log.error("Vercel authentication failed. Deploy later with: " + pc.bold("whop-kit deploy"));
       return null;
     }
   }
-  p.log.success("Vercel authenticated");
+  const user = getVercelUser();
+  p.log.success(`Vercel authenticated${user ? ` as ${pc.bold(user)}` : ""}`);
 
   // ── Step 3: Link project to Vercel ──────────────────────────────
-  // Must link before setting env vars, otherwise vars aren't associated
-  p.log.step("Vercel: linking project...");
-  console.log("");
-  const linkOk = execInteractive(`vercel link --yes`, projectDir);
-  console.log("");
+  const linkOk = await vercelLink(projectDir);
   if (!linkOk) {
-    // First deploy also creates the link, so try deploying directly
     p.log.warning("Could not link project. Will try deploying directly.");
   }
 
