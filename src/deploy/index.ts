@@ -1,8 +1,7 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec, execInteractive } from "../utils/exec.js";
+import { exec } from "../utils/exec.js";
 import {
-  isVercelInstalled,
   installOrUpdateVercel,
   isVercelAuthenticated,
   getVercelUser,
@@ -12,6 +11,13 @@ import {
   vercelEnvSet,
   vercelEnvSetBatch,
 } from "./vercel.js";
+import {
+  isGhInstalled,
+  isGhAuthenticated,
+  installGh,
+  ghLogin,
+  createGitHubRepo,
+} from "./github.js";
 import {
   validateApiKey,
   createWhopApp,
@@ -33,7 +39,7 @@ interface DeployPipelineOptions {
   projectName: string;
   databaseUrl?: string;
   framework: string;
-  whopCompanyKey?: string; // for non-interactive mode
+  whopCompanyKey?: string;
 }
 
 function openUrl(url: string): void {
@@ -45,55 +51,122 @@ function openUrl(url: string): void {
 
 /**
  * Run the full deploy pipeline:
- * 1. Vercel auth + deploy → get production URL
- * 2. Whop API key → create app + webhook → get all credentials
- * 3. Push env vars to Vercel → redeploy
+ * 1. GitHub: create private repo + push
+ * 2. Vercel: link project, connect to GitHub, set env vars, deploy
+ * 3. Whop: create OAuth app + webhook using production URL
  */
 export async function runDeployPipeline(
   options: DeployPipelineOptions,
 ): Promise<DeployResult | null> {
   const { projectDir, projectName, databaseUrl, framework } = options;
 
-  // ── Step 1: Install / update Vercel CLI ─────────────────────────
-  const ok = await installOrUpdateVercel();
-  if (!ok) return null;
+  // ══════════════════════════════════════════════════════════════════
+  // PHASE 1: GitHub — create repo + push code
+  // ══════════════════════════════════════════════════════════════════
 
-  // ── Step 2: Vercel auth ─────────────────────────────────────────
+  p.log.info(pc.bold("\n── GitHub ──────────────────────────────────────"));
+
+  // Install gh if needed
+  if (!isGhInstalled()) {
+    const install = await p.confirm({
+      message: "GitHub CLI (gh) not found. Install it?",
+      initialValue: true,
+    });
+    if (p.isCancel(install) || !install) {
+      p.log.warning("Skipping GitHub. Deploy will upload directly (no auto-deploy on push).");
+    } else {
+      await installGh();
+    }
+  }
+
+  let githubRepoUrl: string | null = null;
+
+  if (isGhInstalled()) {
+    // Auth
+    if (!isGhAuthenticated()) {
+      const loginOk = await ghLogin();
+      if (!loginOk) {
+        p.log.warning("GitHub auth failed. Skipping GitHub repo creation.");
+      }
+    }
+
+    if (isGhAuthenticated()) {
+      // Create private repo and push
+      githubRepoUrl = await createGitHubRepo(projectDir, projectName);
+      if (githubRepoUrl) {
+        p.log.success(`Code pushed to ${pc.cyan(githubRepoUrl)}`);
+      } else {
+        p.log.warning("Could not create GitHub repo. Continuing without it.");
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // PHASE 2: Vercel — deploy + connect to GitHub
+  // ══════════════════════════════════════════════════════════════════
+
+  p.log.info(pc.bold("\n── Vercel ──────────────────────────────────────"));
+
+  // Install / update Vercel CLI
+  const vercelOk = await installOrUpdateVercel();
+  if (!vercelOk) return null;
+
+  // Auth
   if (!isVercelAuthenticated()) {
     const loginOk = await vercelLogin();
     if (!loginOk) {
-      p.log.error("Vercel authentication failed. Deploy later with: " + pc.bold("whop-kit deploy"));
+      p.log.error("Vercel auth failed. Run " + pc.bold("whop-kit deploy") + " later.");
       return null;
     }
   }
-  const user = getVercelUser();
-  p.log.success(`Vercel authenticated${user ? ` as ${pc.bold(user)}` : ""}`);
+  const vercelUser = getVercelUser();
+  p.log.success(`Signed in${vercelUser ? ` as ${pc.bold(vercelUser)}` : ""}`);
 
-  // ── Step 3: Link project to Vercel ──────────────────────────────
+  // Link project
   const linkOk = await vercelLink(projectDir);
   if (!linkOk) {
-    p.log.warning("Could not link project. Will try deploying directly.");
+    p.log.warning("Could not link project.");
   }
 
-  // ── Step 4: Push DATABASE_URL ──────────────────────────────────
+  // Connect GitHub repo to Vercel (enables auto-deploy on push)
+  if (githubRepoUrl) {
+    const s = p.spinner();
+    s.start("Connecting GitHub repo to Vercel (enables auto-deploy on push)...");
+    const connectResult = exec(
+      `vercel git connect ${githubRepoUrl}`,
+      projectDir,
+      30_000,
+    );
+    if (connectResult.success) {
+      s.stop("GitHub connected — future pushes will auto-deploy");
+    } else {
+      s.stop("Could not auto-connect GitHub (connect manually in Vercel dashboard)");
+    }
+  }
+
+  // Set DATABASE_URL
   if (databaseUrl) {
     const s = p.spinner();
-    s.start("Vercel: setting DATABASE_URL...");
+    s.start("Setting DATABASE_URL on Vercel...");
     vercelEnvSet("DATABASE_URL", databaseUrl, "production", projectDir);
     vercelEnvSet("DATABASE_URL", databaseUrl, "preview", projectDir);
     vercelEnvSet("DATABASE_URL", databaseUrl, "development", projectDir);
-    s.stop("DATABASE_URL set on Vercel");
+    s.stop("DATABASE_URL configured");
   }
 
-  // ── Step 5: Deploy ─────────────────────────────────────────────
+  // Deploy
   const productionUrl = await vercelDeploy(projectDir);
   if (!productionUrl) {
-    p.log.error("Vercel deployment failed. Try deploying manually:");
-    p.log.info(pc.bold(`  cd ${projectName} && vercel deploy --prod`));
+    p.log.error("Deployment failed. Try: " + pc.bold(`cd ${projectName} && vercel deploy --prod`));
     return null;
   }
 
-  // ── Step 4: Whop Company API key ────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // PHASE 3: Whop — create OAuth app + webhook
+  // ══════════════════════════════════════════════════════════════════
+
+  p.log.info(pc.bold("\n── Whop ────────────────────────────────────────"));
+
   const connectWhop = await p.confirm({
     message: "Connect to Whop? (creates OAuth app + webhooks automatically)",
     initialValue: true,
@@ -102,8 +175,7 @@ export async function runDeployPipeline(
     return { productionUrl };
   }
 
-  // Guide user through getting a Company API key
-  p.log.info("");
+  // Guide user through API key creation
   p.note(
     [
       `${pc.bold("1.")} Go to the Whop Developer Dashboard`,
@@ -123,7 +195,6 @@ export async function runDeployPipeline(
     "Create a Company API Key",
   );
 
-  // Open the dashboard
   openUrl("https://whop.com/dashboard/developer");
 
   let apiKey = options.whopCompanyKey ?? "";
@@ -137,24 +208,19 @@ export async function runDeployPipeline(
     apiKey = result;
   }
 
-  // ── Step 5: Validate key ────────────────────────────────────────
+  // Validate
   const s = p.spinner();
   s.start("Validating API key...");
   const keyValid = await validateApiKey(apiKey);
   if (!keyValid) {
     s.stop("Invalid API key");
-    p.log.error("The key was rejected. Check that it has the required permissions:");
-    p.log.info("  developer:create_app, developer:manage_api_key, developer:manage_webhook");
-    p.log.info(`  Dashboard: ${pc.cyan("https://whop.com/dashboard/developer")}`);
+    p.log.error("Check permissions: developer:create_app, developer:manage_api_key, developer:manage_webhook");
     return { productionUrl };
   }
   s.stop("API key valid");
 
-  // ── Step 6: Create Whop OAuth app ───────────────────────────────
-  const callbackPath = framework === "astro"
-    ? "/api/auth/callback"
-    : "/api/auth/callback";
-
+  // Create OAuth app
+  const callbackPath = "/api/auth/callback";
   const redirectUris = [
     `http://localhost:3000${callbackPath}`,
     `${productionUrl}${callbackPath}`,
@@ -163,27 +229,25 @@ export async function runDeployPipeline(
   s.start("Creating Whop OAuth app...");
   const app = await createWhopApp(apiKey, projectName, redirectUris);
   if (!app) {
-    s.stop("Failed to create Whop app");
-    p.log.error("Create it manually in the Whop dashboard.");
+    s.stop("Failed to create app");
+    p.log.error("Create manually at: " + pc.cyan("https://whop.com/dashboard/developer"));
     return { productionUrl };
   }
-  s.stop(`Whop app created: ${pc.bold(app.id)}`);
+  s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
-  // ── Step 7: Create webhook ──────────────────────────────────────
+  // Create webhook
   const webhookUrl = `${productionUrl}/api/webhooks/whop`;
   s.start("Creating webhook endpoint...");
   const webhook = await createWhopWebhook(apiKey, webhookUrl, WEBHOOK_EVENTS);
   if (!webhook) {
     s.stop("Failed to create webhook");
-    p.log.warning("Create it manually in the Whop dashboard.");
-    // Continue — app is still configured
+    p.log.warning("Create manually in the Whop dashboard.");
   } else {
-    s.stop("Webhook endpoint created");
+    s.stop("Webhook created");
   }
 
-  // ── Step 8: Push env vars to Vercel + update local ──────────────
+  // Push Whop env vars to Vercel
   const envVars: Record<string, string> = {};
-
   if (framework === "nextjs") {
     envVars["NEXT_PUBLIC_WHOP_APP_ID"] = app.id;
   } else {
@@ -194,24 +258,21 @@ export async function runDeployPipeline(
     envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
   }
 
-  s.start("Pushing credentials to Vercel...");
+  s.start("Pushing Whop credentials to Vercel...");
   const { success, failed } = vercelEnvSetBatch(envVars, projectDir);
   if (failed.length > 0) {
-    s.stop(`Pushed ${success.length} vars, ${failed.length} failed`);
-    p.log.warning(`Failed to push: ${failed.join(", ")}. Add them manually in Vercel dashboard.`);
+    s.stop(`${success.length} pushed, ${failed.length} failed`);
   } else {
-    s.stop(`${success.length} environment variables pushed`);
+    s.stop("Credentials pushed to Vercel");
   }
 
-  // ── Step 9: Redeploy with full config ───────────────────────────
-  p.log.step("Vercel: redeploying with full configuration...");
-  console.log("");
-  const redeployOk = execInteractive("vercel deploy --prod --yes", projectDir);
-  console.log("");
-  if (redeployOk) {
-    p.log.success("Redeployed with full configuration");
+  // Redeploy with all config
+  s.start("Redeploying with full configuration...");
+  const redeployResult = exec("vercel deploy --prod --yes", projectDir, 300_000);
+  if (redeployResult.success) {
+    s.stop("Redeployed successfully");
   } else {
-    p.log.warning("Redeploy failed — env vars will apply on next deploy/push");
+    s.stop("Redeploy pending — will apply on next git push");
   }
 
   return {

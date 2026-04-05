@@ -1,5 +1,6 @@
 export interface DeployResult {
   productionUrl: string;
+  githubUrl?: string;
   whopAppId?: string;
   whopApiKey?: string;
   webhookSecret?: string;
