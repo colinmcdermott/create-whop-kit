@@ -327,9 +327,10 @@ export default defineCommand({
 
     // ── Deploy to Vercel ─────────────────────────────────────────────
     let deployResult = null;
+    let deployAttempted = false;
     if (!args["skip-deploy"] && !args["dry-run"]) {
       const shouldDeploy = isNonInteractive
-        ? false // non-interactive skips deploy unless explicitly enabled
+        ? false
         : await (async () => {
             const result = await p.confirm({
               message: "Deploy to Vercel and connect to Whop?",
@@ -339,6 +340,7 @@ export default defineCommand({
           })();
 
       if (shouldDeploy) {
+        deployAttempted = true;
         const { runDeployPipeline } = await import("../deploy/index.js");
         deployResult = await runDeployPipeline({
           projectDir,
@@ -352,8 +354,10 @@ export default defineCommand({
 
     // ── Summary ───────────────────────────────────────────────────────
     let summary = "";
+    const deployFailed = deployAttempted && !deployResult?.productionUrl;
 
     if (deployResult?.productionUrl) {
+      // Full success — deployed and configured
       if (dbUrl) summary += `${pc.green("✓")} Database connected\n`;
       summary += `${pc.green("✓")} Deployed to Vercel\n`;
       if (deployResult.whopAppId) summary += `${pc.green("✓")} Whop app: ${deployResult.whopAppId}\n`;
@@ -364,7 +368,19 @@ export default defineCommand({
       summary += `\n`;
       summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
       summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start local dev server")}`;
+    } else if (deployFailed) {
+      // Deploy was attempted but failed
+      if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;
+      summary += `${pc.red("✗")} Vercel deployment failed\n`;
+      summary += `\n`;
+      summary += `  ${pc.bold("To retry:")}\n`;
+      summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
+      summary += `  ${pc.bold("whop-kit deploy")}    ${pc.dim("# retry deploy + Whop setup")}\n`;
+      summary += `\n`;
+      summary += `  ${pc.bold("Or develop locally:")}\n`;
+      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start dev server at localhost:3000")}`;
     } else {
+      // No deploy attempted — local dev path
       if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;
       if (dbNote) summary += `${pc.yellow("!")} ${dbNote}\n`;
       summary += `\n`;
@@ -380,8 +396,12 @@ export default defineCommand({
       summary += `  ${pc.dim(`Or run ${pc.bold("whop-kit deploy")} to deploy + auto-configure.`)}`;
     }
 
-    p.note(summary, "Your app is ready");
-
-    p.outro(`${pc.green("Happy building!")} ${pc.dim("— whop-kit")}`);
+    if (deployFailed) {
+      p.note(summary, pc.yellow("Setup incomplete"));
+      p.outro(`${pc.yellow("Deploy failed.")} Run ${pc.bold("whop-kit deploy")} to retry.`);
+    } else {
+      p.note(summary, "Your app is ready");
+      p.outro(`${pc.green("Happy building!")} ${pc.dim("— whop-kit")}`);
+    }
   },
 });
