@@ -292,25 +292,50 @@ export async function runDeployPipeline(
       // The create API doesn't return the app's API key — user must copy it from dashboard
       p.note(
         [
-          `Your app ${pc.bold(app.id)} was created. Now get its API key:`,
+          `Your app was created! Now copy its credentials:`,
           "",
           `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
           `${pc.bold("2.")} Click on your new app "${projectName}"`,
-          `${pc.bold("3.")} Find ${pc.bold("WHOP_API_KEY")} in the Environment Variables section`,
-          `${pc.bold("4.")} Click reveal, copy it, and paste below`,
+          `${pc.bold("3.")} Copy the environment variables shown on the app page`,
+          `${pc.bold("4.")} Paste the whole block below (both lines)`,
         ].join("\n"),
-        "App API Key",
+        "App Credentials",
       );
 
       openUrl("https://whop.com/dashboard/developer");
 
       let appApiKey = "";
-      const appKeyResult = await p.text({
-        message: "Paste the App API key (WHOP_API_KEY)",
-        placeholder: "starts with apik_...",
-        validate: (v) => (!v ? "Required — find it in the app's Environment Variables" : undefined),
+      let appId = app.id;
+      const envResult = await p.text({
+        message: "Paste the environment variables from your app page",
+        placeholder: "WHOP_API_KEY=apik_... NEXT_PUBLIC_WHOP_APP_ID=app_...",
+        validate: (v) => {
+          if (!v) return "Required — copy from your app's details page";
+          if (!v.includes("WHOP_API_KEY=") && !v.includes("apik_")) {
+            return "Should contain WHOP_API_KEY=apik_... (copy both lines from the app page)";
+          }
+        },
       });
-      if (!p.isCancel(appKeyResult)) appApiKey = appKeyResult;
+
+      if (!p.isCancel(envResult) && envResult) {
+        // Parse WHOP_API_KEY and NEXT_PUBLIC_WHOP_APP_ID from pasted text
+        const apiKeyMatch = envResult.match(/WHOP_API_KEY=(apik_[^\s]+)/);
+        if (apiKeyMatch) appApiKey = apiKeyMatch[1];
+
+        const appIdMatch = envResult.match(/NEXT_PUBLIC_WHOP_APP_ID=(app_[^\s]+)/);
+        if (appIdMatch) appId = appIdMatch[1];
+
+        if (appApiKey) {
+          p.log.success(`Parsed: WHOP_API_KEY and APP_ID ${pc.dim(appId)}`);
+        } else {
+          // Maybe they just pasted the raw key
+          const rawKey = envResult.trim();
+          if (rawKey.startsWith("apik_")) {
+            appApiKey = rawKey;
+            p.log.success("API key received");
+          }
+        }
+      }
 
       // ── Step E: Create webhook ───────────────────────────────────
       s = p.spinner();
