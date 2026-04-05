@@ -227,8 +227,8 @@ export async function runDeployPipeline(
           `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
           `${pc.bold("2.")} Click ${pc.bold('"Create"')} under "Company API Keys"`,
           `${pc.bold("3.")} Give it a name (e.g. "${projectName}")`,
-          `${pc.bold("4.")} Set role to ${pc.bold('"Owner"')} ${pc.dim("(ensures all permissions)")}`,
-          `${pc.bold("5.")} Click Create, copy the key, and paste it below`,
+          `${pc.bold("4.")} Click Create and copy the key`,
+          `${pc.bold("5.")} Paste it below`,
         ].join("\n"),
         "Whop Company API Key",
       );
@@ -237,14 +237,14 @@ export async function runDeployPipeline(
 
       // Retry loop — let user paste a new key if validation fails
       let apiKey = options.whopCompanyKey ?? "";
-      let companyId: string | null = null;
+      let keyValid = false;
 
       for (let attempt = 0; attempt < 3; attempt++) {
         if (!apiKey) {
           const result = await p.text({
             message: attempt === 0
               ? "Paste your Company API key"
-              : "Paste a new Company API key (make sure role is set to Owner)",
+              : "Paste a new Company API key",
             placeholder: "paste the key here...",
             validate: (v) => (!v ? "API key is required" : undefined),
           });
@@ -256,17 +256,16 @@ export async function runDeployPipeline(
 
         const s = p.spinner();
         s.start("Validating API key...");
-        companyId = await validateApiKey(apiKey);
+        keyValid = await validateApiKey(apiKey);
 
-        if (companyId) {
-          s.stop(`API key valid (company: ${pc.dim(companyId)})`);
+        if (keyValid) {
+          s.stop("API key valid");
           break;
         }
 
-        s.stop("API key invalid or missing permissions");
+        s.stop("API key invalid");
 
         if (attempt < 2) {
-          p.log.warning("Make sure the key's role is set to \"Owner\" (not Admin).");
           const retry = await p.confirm({
             message: "Try a different key?",
             initialValue: true,
@@ -274,14 +273,14 @@ export async function runDeployPipeline(
           if (p.isCancel(retry) || !retry) {
             return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
           }
-          apiKey = ""; // clear so it prompts again
+          apiKey = "";
         } else {
-          p.log.error("Could not validate after 3 attempts. Configure Whop manually via the setup wizard.");
+          p.log.error("Could not validate. Configure Whop manually via the setup wizard.");
           return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
         }
       }
 
-      if (!companyId) {
+      if (!keyValid) {
         return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
       }
 
@@ -291,8 +290,9 @@ export async function runDeployPipeline(
         `${productionUrl}/api/auth/callback`,
       ];
 
+      const s = p.spinner();
       s.start("Creating Whop OAuth app...");
-      const app = await createWhopApp(apiKey, projectName, redirectUris, companyId);
+      const app = await createWhopApp(apiKey, projectName, redirectUris);
       if (!app) {
         s.stop("Failed to create app");
         p.log.error("Create manually: " + pc.cyan("https://whop.com/dashboard/developer"));
@@ -302,7 +302,7 @@ export async function runDeployPipeline(
 
       // Step 2: Create webhook endpoint
       s.start("Creating webhook...");
-      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS, companyId);
+      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS);
       if (!webhook) {
         s.stop("Failed (create manually in Whop dashboard)");
       } else {
