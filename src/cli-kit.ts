@@ -1,18 +1,22 @@
 import { defineCommand, runMain } from "citty";
 import add from "./commands/add.js";
 import status from "./commands/status.js";
+import env from "./commands/env.js";
+import catalog from "./commands/catalog.js";
 import open from "./commands/open.js";
 import upgrade from "./commands/upgrade.js";
 
 const main = defineCommand({
   meta: {
     name: "whop-kit",
-    version: "0.2.0",
+    version: "0.5.0",
     description: "Manage your Whop project",
   },
   subCommands: {
     add,
     status,
+    env,
+    catalog,
     open,
     upgrade,
   },

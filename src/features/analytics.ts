@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import { appendEnvVar } from "./helpers.js";
+import { writeFeatureSkill } from "../scaffolding/skills.js";
 import type { Feature } from "../commands/add.js";
 
 export const analyticsFeature: Feature = {
@@ -33,5 +34,7 @@ export const analyticsFeature: Feature = {
 
     appendEnvVar(projectDir, "ANALYTICS_PROVIDER", provider);
     appendEnvVar(projectDir, "ANALYTICS_ID", id);
+
+    writeFeatureSkill(projectDir, "analytics", provider);
   },
 };

@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import { appendEnvVar } from "./helpers.js";
+import { writeFeatureSkill } from "../scaffolding/skills.js";
 import type { Feature } from "../commands/add.js";
 
 export const emailFeature: Feature = {
@@ -35,5 +36,7 @@ export const emailFeature: Feature = {
     if (fromAddress) {
       appendEnvVar(projectDir, "EMAIL_FROM_ADDRESS", fromAddress);
     }
+
+    writeFeatureSkill(projectDir, "email", provider);
   },
 };

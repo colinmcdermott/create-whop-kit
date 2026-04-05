@@ -11,6 +11,7 @@ import { cleanupDir } from "../utils/cleanup.js";
 import { cloneTemplate, updatePackageName, initGit } from "../scaffolding/clone.js";
 import { writeEnvFile } from "../scaffolding/env-file.js";
 import { createManifest } from "../scaffolding/manifest.js";
+import { installProviderSkills, writeProjectContext } from "../scaffolding/skills.js";
 
 function isCancelled(value: unknown): value is symbol {
   return p.isCancel(value);
@@ -307,6 +308,29 @@ export default defineCommand({
       features: [],
       templateVersion: "0.2.0",
     });
+
+    // ── Agent skills ──────────────────────────────────────────────────
+    if (database !== "later" && database !== "manual") {
+      s.start("Installing provider skills for AI assistants...");
+      installProviderSkills(projectDir, database);
+      s.stop("Provider skills installed");
+    }
+
+    // ── Project context ──────────────────────────────────────────────
+    const envStatus: Record<string, boolean> = {};
+    if (dbUrl) envStatus["DATABASE_URL"] = true;
+    if (appId) {
+      envStatus["NEXT_PUBLIC_WHOP_APP_ID"] = true;
+      envStatus["WHOP_APP_ID"] = true;
+    }
+    if (apiKey) envStatus["WHOP_API_KEY"] = true;
+    if (webhookSecret) envStatus["WHOP_WEBHOOK_SECRET"] = true;
+
+    const manifest = {
+      framework, appType, database, features: [] as string[],
+      templateVersion: "0.4.0", createdAt: new Date().toISOString(),
+    };
+    writeProjectContext(projectDir, { version: 1, ...manifest }, envStatus);
 
     // ── Install dependencies ──────────────────────────────────────────
     const pm = detectPackageManager();
