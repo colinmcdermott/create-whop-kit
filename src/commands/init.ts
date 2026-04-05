@@ -359,15 +359,16 @@ export default defineCommand({
     if (deployResult?.productionUrl) {
       // Full success — deployed and configured
       if (dbUrl) summary += `${pc.green("✓")} Database connected\n`;
-      summary += `${pc.green("✓")} Deployed to Vercel\n`;
+      if (deployResult.githubUrl) summary += `${pc.green("✓")} GitHub: ${pc.dim(deployResult.githubUrl)}\n`;
+      summary += `${pc.green("✓")} Vercel: ${pc.cyan(deployResult.productionUrl)}\n`;
       if (deployResult.whopAppId) summary += `${pc.green("✓")} Whop app: ${deployResult.whopAppId}\n`;
       if (deployResult.webhookSecret) summary += `${pc.green("✓")} Webhooks configured\n`;
       summary += `\n`;
-      summary += `  ${pc.bold("Production:")} ${pc.cyan(deployResult.productionUrl)}\n`;
-      summary += `  ${pc.bold("Local dev:")}  ${pc.cyan("http://localhost:3000")}\n`;
-      summary += `\n`;
       summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
-      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start local dev server")}`;
+      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# local development at localhost:3000")}\n`;
+      if (deployResult.githubUrl) {
+        summary += `  ${pc.bold("git push")}         ${pc.dim("# auto-deploys to Vercel")}`;
+      }
     } else if (deployFailed) {
       // Deploy was attempted but failed
       if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;

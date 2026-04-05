@@ -88,3 +88,12 @@ export function getGitHubRepoUrl(projectDir: string): string | null {
   const result = exec("gh repo view --json url --jq .url", projectDir);
   return result.success ? result.stdout.trim() : null;
 }
+
+/**
+ * Get the list of GitHub orgs the user belongs to.
+ */
+export function getGitHubOrgs(): string[] {
+  const result = exec("gh api user/orgs --jq '.[].login'");
+  if (!result.success || !result.stdout.trim()) return [];
+  return result.stdout.trim().split("\n").filter(Boolean);
+}

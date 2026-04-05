@@ -17,6 +17,7 @@ import {
   installGh,
   ghLogin,
   createGitHubRepo,
+  getGitHubOrgs,
 } from "./github.js";
 import {
   validateApiKey,
@@ -50,10 +51,7 @@ function openUrl(url: string): void {
 }
 
 /**
- * Run the full deploy pipeline:
- * 1. GitHub: create private repo + push
- * 2. Vercel: link project, connect to GitHub, set env vars, deploy
- * 3. Whop: create OAuth app + webhook using production URL
+ * Run the full deploy pipeline.
  */
 export async function runDeployPipeline(
   options: DeployPipelineOptions,
@@ -61,224 +59,271 @@ export async function runDeployPipeline(
   const { projectDir, projectName, databaseUrl, framework } = options;
 
   // ══════════════════════════════════════════════════════════════════
-  // PHASE 1: GitHub — create repo + push code
+  // STEP 0: Ask how they want to set up
   // ══════════════════════════════════════════════════════════════════
 
-  p.log.info(pc.bold("\n── GitHub ──────────────────────────────────────"));
+  const setupMode = await p.select({
+    message: "How would you like to deploy?",
+    options: [
+      {
+        value: "github-vercel",
+        label: "GitHub + Vercel (recommended)",
+        hint: "Private repo, auto-deploy on every push",
+      },
+      {
+        value: "github-only",
+        label: "GitHub only",
+        hint: "Push code to GitHub, deploy later",
+      },
+      {
+        value: "vercel-only",
+        label: "Vercel only",
+        hint: "Deploy without GitHub (no auto-deploy on push)",
+      },
+    ],
+  });
+  if (p.isCancel(setupMode)) return null;
 
-  // Install gh if needed
-  if (!isGhInstalled()) {
-    const install = await p.confirm({
-      message: "GitHub CLI (gh) not found. Install it?",
-      initialValue: true,
-    });
-    if (p.isCancel(install) || !install) {
-      p.log.warning("Skipping GitHub. Deploy will upload directly (no auto-deploy on push).");
-    } else {
-      await installGh();
-    }
-  }
+  const useGithub = setupMode === "github-vercel" || setupMode === "github-only";
+  const useVercel = setupMode === "github-vercel" || setupMode === "vercel-only";
 
   let githubRepoUrl: string | null = null;
+  let productionUrl: string | null = null;
 
-  if (isGhInstalled()) {
+  // ══════════════════════════════════════════════════════════════════
+  // PHASE 1: GitHub
+  // ══════════════════════════════════════════════════════════════════
+
+  if (useGithub) {
+    p.log.info(pc.bold("\n── GitHub ──────────────────────────────────────"));
+
+    // Install gh if needed
+    if (!isGhInstalled()) {
+      p.log.info("The GitHub CLI (gh) is needed to create your repo.");
+      const installed = await installGh();
+      if (!installed) {
+        p.log.warning("Skipping GitHub — install gh manually: https://cli.github.com");
+      }
+    }
+
+    if (isGhInstalled()) {
+      // Auth
+      if (!isGhAuthenticated()) {
+        const loginOk = await ghLogin();
+        if (!loginOk) {
+          p.log.warning("GitHub auth failed. Skipping repo creation.");
+        }
+      }
+
+      if (isGhAuthenticated()) {
+        // Ask which GitHub account/org to use
+        const orgs = getGitHubOrgs();
+        let repoFullName = projectName;
+
+        if (orgs.length > 0) {
+          const orgChoice = await p.select({
+            message: "Which GitHub account?",
+            options: [
+              { value: "", label: "Personal account", hint: "your personal GitHub" },
+              ...orgs.map((org) => ({
+                value: org,
+                label: org,
+                hint: "organization",
+              })),
+            ],
+          });
+          if (!p.isCancel(orgChoice) && orgChoice) {
+            repoFullName = `${orgChoice}/${projectName}`;
+          }
+        }
+
+        githubRepoUrl = await createGitHubRepo(projectDir, repoFullName);
+        if (githubRepoUrl) {
+          p.log.success(`Code pushed to ${pc.cyan(githubRepoUrl)}`);
+        }
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // PHASE 2: Vercel
+  // ══════════════════════════════════════════════════════════════════
+
+  if (useVercel) {
+    p.log.info(pc.bold("\n── Vercel ──────────────────────────────────────"));
+
+    // Install / update
+    const vercelOk = await installOrUpdateVercel();
+    if (!vercelOk) {
+      p.log.error("Could not set up Vercel CLI.");
+      return githubRepoUrl ? { productionUrl: "", githubUrl: githubRepoUrl } : null;
+    }
+
     // Auth
-    if (!isGhAuthenticated()) {
-      const loginOk = await ghLogin();
+    if (!isVercelAuthenticated()) {
+      const loginOk = await vercelLogin();
       if (!loginOk) {
-        p.log.warning("GitHub auth failed. Skipping GitHub repo creation.");
+        p.log.error("Vercel auth failed. Run " + pc.bold("whop-kit deploy") + " later.");
+        return githubRepoUrl ? { productionUrl: "", githubUrl: githubRepoUrl } : null;
       }
     }
+    const vercelUser = getVercelUser();
+    p.log.success(`Signed in${vercelUser ? ` as ${pc.bold(vercelUser)}` : ""}`);
 
-    if (isGhAuthenticated()) {
-      // Create private repo and push
-      githubRepoUrl = await createGitHubRepo(projectDir, projectName);
-      if (githubRepoUrl) {
-        p.log.success(`Code pushed to ${pc.cyan(githubRepoUrl)}`);
+    // Link
+    await vercelLink(projectDir);
+
+    // Connect GitHub repo (enables auto-deploy on push)
+    if (githubRepoUrl) {
+      const s = p.spinner();
+      s.start("Connecting GitHub to Vercel (auto-deploy on push)...");
+      const connectResult = exec(`vercel git connect ${githubRepoUrl}`, projectDir, 30_000);
+      if (connectResult.success) {
+        s.stop("Connected — every git push will auto-deploy");
       } else {
-        p.log.warning("Could not create GitHub repo. Continuing without it.");
+        s.stop("Auto-connect failed (connect manually in Vercel dashboard → Git)");
       }
     }
-  }
 
-  // ══════════════════════════════════════════════════════════════════
-  // PHASE 2: Vercel — deploy + connect to GitHub
-  // ══════════════════════════════════════════════════════════════════
-
-  p.log.info(pc.bold("\n── Vercel ──────────────────────────────────────"));
-
-  // Install / update Vercel CLI
-  const vercelOk = await installOrUpdateVercel();
-  if (!vercelOk) return null;
-
-  // Auth
-  if (!isVercelAuthenticated()) {
-    const loginOk = await vercelLogin();
-    if (!loginOk) {
-      p.log.error("Vercel auth failed. Run " + pc.bold("whop-kit deploy") + " later.");
-      return null;
+    // Set DATABASE_URL (3 environments — show progress for each)
+    if (databaseUrl) {
+      const s = p.spinner();
+      s.start("Setting DATABASE_URL → production...");
+      vercelEnvSet("DATABASE_URL", databaseUrl, "production", projectDir);
+      s.message("Setting DATABASE_URL → preview...");
+      vercelEnvSet("DATABASE_URL", databaseUrl, "preview", projectDir);
+      s.message("Setting DATABASE_URL → development...");
+      vercelEnvSet("DATABASE_URL", databaseUrl, "development", projectDir);
+      s.stop("DATABASE_URL configured (all environments)");
     }
-  }
-  const vercelUser = getVercelUser();
-  p.log.success(`Signed in${vercelUser ? ` as ${pc.bold(vercelUser)}` : ""}`);
 
-  // Link project
-  const linkOk = await vercelLink(projectDir);
-  if (!linkOk) {
-    p.log.warning("Could not link project.");
-  }
-
-  // Connect GitHub repo to Vercel (enables auto-deploy on push)
-  if (githubRepoUrl) {
-    const s = p.spinner();
-    s.start("Connecting GitHub repo to Vercel (enables auto-deploy on push)...");
-    const connectResult = exec(
-      `vercel git connect ${githubRepoUrl}`,
-      projectDir,
-      30_000,
-    );
-    if (connectResult.success) {
-      s.stop("GitHub connected — future pushes will auto-deploy");
-    } else {
-      s.stop("Could not auto-connect GitHub (connect manually in Vercel dashboard)");
+    // Deploy
+    productionUrl = await vercelDeploy(projectDir);
+    if (!productionUrl) {
+      p.log.error("Deploy failed. Try: " + pc.bold(`cd ${projectName} && vercel deploy --prod`));
     }
   }
 
-  // Set DATABASE_URL
-  if (databaseUrl) {
-    const s = p.spinner();
-    s.start("Setting DATABASE_URL on Vercel...");
-    vercelEnvSet("DATABASE_URL", databaseUrl, "production", projectDir);
-    vercelEnvSet("DATABASE_URL", databaseUrl, "preview", projectDir);
-    vercelEnvSet("DATABASE_URL", databaseUrl, "development", projectDir);
-    s.stop("DATABASE_URL configured");
-  }
-
-  // Deploy
-  const productionUrl = await vercelDeploy(projectDir);
-  if (!productionUrl) {
-    p.log.error("Deployment failed. Try: " + pc.bold(`cd ${projectName} && vercel deploy --prod`));
-    return null;
-  }
-
   // ══════════════════════════════════════════════════════════════════
-  // PHASE 3: Whop — create OAuth app + webhook
+  // PHASE 3: Whop (only if we have a production URL)
   // ══════════════════════════════════════════════════════════════════
 
-  p.log.info(pc.bold("\n── Whop ────────────────────────────────────────"));
+  if (productionUrl) {
+    p.log.info(pc.bold("\n── Whop ────────────────────────────────────────"));
 
-  const connectWhop = await p.confirm({
-    message: "Connect to Whop? (creates OAuth app + webhooks automatically)",
-    initialValue: true,
-  });
-  if (p.isCancel(connectWhop) || !connectWhop) {
-    return { productionUrl };
-  }
-
-  // Guide user through API key creation
-  p.note(
-    [
-      `${pc.bold("1.")} Go to the Whop Developer Dashboard`,
-      `   ${pc.cyan("https://whop.com/dashboard/developer")}`,
-      "",
-      `${pc.bold("2.")} Click ${pc.bold('"Create"')} under "Company API Keys"`,
-      "",
-      `${pc.bold("3.")} Name it anything (e.g. "${projectName}")`,
-      "",
-      `${pc.bold("4.")} Select these permissions:`,
-      `   ${pc.green("•")} developer:create_app`,
-      `   ${pc.green("•")} developer:manage_api_key`,
-      `   ${pc.green("•")} developer:manage_webhook`,
-      "",
-      `${pc.bold("5.")} Create the key and paste it below`,
-    ].join("\n"),
-    "Create a Company API Key",
-  );
-
-  openUrl("https://whop.com/dashboard/developer");
-
-  let apiKey = options.whopCompanyKey ?? "";
-  if (!apiKey) {
-    const result = await p.text({
-      message: "Paste your Company API key",
-      placeholder: "paste the key here...",
-      validate: (v) => (!v ? "API key is required" : undefined),
+    const connectWhop = await p.confirm({
+      message: "Connect to Whop? (creates OAuth app + webhooks automatically)",
+      initialValue: true,
     });
-    if (p.isCancel(result)) return { productionUrl };
-    apiKey = result;
-  }
 
-  // Validate
-  const s = p.spinner();
-  s.start("Validating API key...");
-  const keyValid = await validateApiKey(apiKey);
-  if (!keyValid) {
-    s.stop("Invalid API key");
-    p.log.error("Check permissions: developer:create_app, developer:manage_api_key, developer:manage_webhook");
-    return { productionUrl };
-  }
-  s.stop("API key valid");
+    if (!p.isCancel(connectWhop) && connectWhop) {
+      p.note(
+        [
+          `${pc.bold("1.")} Go to the Whop Developer Dashboard`,
+          `   ${pc.cyan("https://whop.com/dashboard/developer")}`,
+          "",
+          `${pc.bold("2.")} Click ${pc.bold('"Create"')} under "Company API Keys"`,
+          "",
+          `${pc.bold("3.")} Name it anything (e.g. "${projectName}")`,
+          "",
+          `${pc.bold("4.")} Select these permissions:`,
+          `   ${pc.green("•")} developer:create_app`,
+          `   ${pc.green("•")} developer:manage_api_key`,
+          `   ${pc.green("•")} developer:manage_webhook`,
+          "",
+          `${pc.bold("5.")} Create the key and paste it below`,
+        ].join("\n"),
+        "Create a Company API Key",
+      );
 
-  // Create OAuth app
-  const callbackPath = "/api/auth/callback";
-  const redirectUris = [
-    `http://localhost:3000${callbackPath}`,
-    `${productionUrl}${callbackPath}`,
-  ];
+      openUrl("https://whop.com/dashboard/developer");
 
-  s.start("Creating Whop OAuth app...");
-  const app = await createWhopApp(apiKey, projectName, redirectUris);
-  if (!app) {
-    s.stop("Failed to create app");
-    p.log.error("Create manually at: " + pc.cyan("https://whop.com/dashboard/developer"));
-    return { productionUrl };
-  }
-  s.stop(`OAuth app created: ${pc.bold(app.id)}`);
+      let apiKey = options.whopCompanyKey ?? "";
+      if (!apiKey) {
+        const result = await p.text({
+          message: "Paste your Company API key",
+          placeholder: "paste the key here...",
+          validate: (v) => (!v ? "API key is required" : undefined),
+        });
+        if (p.isCancel(result)) {
+          return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+        }
+        apiKey = result;
+      }
 
-  // Create webhook
-  const webhookUrl = `${productionUrl}/api/webhooks/whop`;
-  s.start("Creating webhook endpoint...");
-  const webhook = await createWhopWebhook(apiKey, webhookUrl, WEBHOOK_EVENTS);
-  if (!webhook) {
-    s.stop("Failed to create webhook");
-    p.log.warning("Create manually in the Whop dashboard.");
-  } else {
-    s.stop("Webhook created");
-  }
+      // Validate
+      const s = p.spinner();
+      s.start("Validating API key...");
+      const keyValid = await validateApiKey(apiKey);
+      if (!keyValid) {
+        s.stop("Invalid API key");
+        p.log.error("Check permissions: developer:create_app, developer:manage_api_key, developer:manage_webhook");
+        return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+      }
+      s.stop("API key valid");
 
-  // Push Whop env vars to Vercel
-  const envVars: Record<string, string> = {};
-  if (framework === "nextjs") {
-    envVars["NEXT_PUBLIC_WHOP_APP_ID"] = app.id;
-  } else {
-    envVars["WHOP_APP_ID"] = app.id;
-  }
-  envVars["WHOP_API_KEY"] = app.client_secret;
-  if (webhook?.secret) {
-    envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
-  }
+      // Create OAuth app
+      const redirectUris = [
+        "http://localhost:3000/api/auth/callback",
+        `${productionUrl}/api/auth/callback`,
+      ];
 
-  s.start("Pushing Whop credentials to Vercel...");
-  const { success, failed } = vercelEnvSetBatch(envVars, projectDir);
-  if (failed.length > 0) {
-    s.stop(`${success.length} pushed, ${failed.length} failed`);
-  } else {
-    s.stop("Credentials pushed to Vercel");
-  }
+      s.start("Creating Whop OAuth app...");
+      const app = await createWhopApp(apiKey, projectName, redirectUris);
+      if (!app) {
+        s.stop("Failed");
+        p.log.error("Create manually: " + pc.cyan("https://whop.com/dashboard/developer"));
+        return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+      }
+      s.stop(`OAuth app created: ${pc.bold(app.id)}`);
 
-  // Redeploy with all config
-  s.start("Redeploying with full configuration...");
-  const redeployResult = exec("vercel deploy --prod --yes", projectDir, 300_000);
-  if (redeployResult.success) {
-    s.stop("Redeployed successfully");
-  } else {
-    s.stop("Redeploy pending — will apply on next git push");
+      // Create webhook
+      s.start("Creating webhook...");
+      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS);
+      if (!webhook) {
+        s.stop("Failed (create manually in Whop dashboard)");
+      } else {
+        s.stop("Webhook created");
+      }
+
+      // Push Whop env vars to Vercel
+      if (useVercel) {
+        const envVars: Record<string, string> = {};
+        if (framework === "nextjs") {
+          envVars["NEXT_PUBLIC_WHOP_APP_ID"] = app.id;
+        } else {
+          envVars["WHOP_APP_ID"] = app.id;
+        }
+        envVars["WHOP_API_KEY"] = app.client_secret;
+        if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
+
+        s.start("Pushing credentials to Vercel...");
+        for (const [key] of Object.entries(envVars)) {
+          s.message(`Pushing ${key}...`);
+          vercelEnvSet(key, envVars[key], "production", projectDir);
+          vercelEnvSet(key, envVars[key], "preview", projectDir);
+          vercelEnvSet(key, envVars[key], "development", projectDir);
+        }
+        s.stop("All credentials pushed to Vercel");
+
+        // Redeploy
+        s.start("Redeploying with full configuration...");
+        const redeploy = exec("vercel deploy --prod --yes", projectDir, 300_000);
+        s.stop(redeploy.success ? "Redeployed" : "Redeploy pending — will apply on next git push");
+      }
+
+      return {
+        productionUrl,
+        githubUrl: githubRepoUrl ?? undefined,
+        whopAppId: app.id,
+        whopApiKey: app.client_secret,
+        webhookSecret: webhook?.secret,
+      };
+    }
   }
 
   return {
-    productionUrl,
-    whopAppId: app.id,
-    whopApiKey: app.client_secret,
-    webhookSecret: webhook?.secret,
+    productionUrl: productionUrl ?? "",
+    githubUrl: githubRepoUrl ?? undefined,
   };
 }
