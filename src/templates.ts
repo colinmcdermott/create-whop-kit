@@ -48,7 +48,7 @@ export const TEMPLATES: Record<string, Template> = {
   "saas:nextjs": {
     name: "Next.js SaaS",
     description: "Full SaaS with dashboard, pricing, billing, and docs",
-    repo: "colinmcdermott/whop-saas-starter",
+    repo: "whopio/whop-saas-starter",
     available: true,
   },
   "saas:astro": {
