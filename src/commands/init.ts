@@ -90,6 +90,13 @@ export default defineCommand({
     checkGit();
 
     console.log("");
+    console.log(pc.cyan(`  ██╗    ██╗██╗  ██╗ ██████╗ ██████╗ `));
+    console.log(pc.cyan(`  ██║    ██║██║  ██║██╔═══██╗██╔══██╗`));
+    console.log(pc.cyan(`  ██║ █╗ ██║███████║██║   ██║██████╔╝`));
+    console.log(pc.cyan(`  ██║███╗██║██╔══██║██║   ██║██╔═══╝ `));
+    console.log(pc.cyan(`  ╚███╔███╔╝██║  ██║╚██████╔╝██║     `));
+    console.log(pc.cyan(`   ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝     `));
+    console.log("");
     p.intro(`${pc.bgCyan(pc.black(" create-whop-kit "))} Create a Whop-powered app`);
 
     const isNonInteractive = !!(args.framework && args.db);
@@ -397,35 +404,34 @@ export default defineCommand({
     }
 
     // ── Summary ───────────────────────────────────────────────────────
-    let summary = "";
-    const deployFailed = deployAttempted && !deployResult?.productionUrl;
+    const tracker = deployResult?.tracker;
 
-    if (deployResult?.productionUrl) {
-      // Full success — deployed and configured
-      if (dbUrl) summary += `${pc.green("✓")} Database connected\n`;
-      if (deployResult.githubUrl) summary += `${pc.green("✓")} GitHub: ${pc.dim(deployResult.githubUrl)}\n`;
-      summary += `${pc.green("✓")} Vercel: ${pc.cyan(deployResult.productionUrl)}\n`;
-      if (deployResult.whopAppId) summary += `${pc.green("✓")} Whop app: ${deployResult.whopAppId}\n`;
-      if (deployResult.webhookSecret) summary += `${pc.green("✓")} Webhooks configured\n`;
-      summary += `\n`;
-      summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
-      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# local development at localhost:3000")}\n`;
-      if (deployResult.githubUrl) {
-        summary += `  ${pc.bold("git push")}         ${pc.dim("# auto-deploys to Vercel")}`;
+    if (tracker) {
+      // Deploy was attempted — show step-by-step results
+      if (dbUrl) tracker.success("Database");
+
+      const summary = tracker.render({
+        productionUrl: deployResult?.productionUrl,
+        githubUrl: deployResult?.githubUrl,
+      });
+
+      // Add next steps
+      let nextSteps = `\n  ${pc.bold("cd")} ${basename(projectName)}\n`;
+      nextSteps += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# local development")}\n`;
+      if (deployResult?.githubUrl) {
+        nextSteps += `  ${pc.bold("git push")}         ${pc.dim("# auto-deploys to Vercel")}`;
       }
-    } else if (deployFailed) {
-      // Deploy was attempted but failed
-      if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;
-      summary += `${pc.red("✗")} Vercel deployment failed\n`;
-      summary += `\n`;
-      summary += `  ${pc.bold("To retry:")}\n`;
-      summary += `  ${pc.bold("cd")} ${basename(projectName)}\n`;
-      summary += `  ${pc.bold("whop-kit deploy")}    ${pc.dim("# retry deploy + Whop setup")}\n`;
-      summary += `\n`;
-      summary += `  ${pc.bold("Or develop locally:")}\n`;
-      summary += `  ${pc.bold(`${pm} run dev`)}      ${pc.dim("# start dev server at localhost:3000")}`;
+
+      if (tracker.hasFailures) {
+        p.note(summary + nextSteps, pc.yellow("Setup incomplete — see failed steps above"));
+        p.outro(`Fix the items marked ${pc.red("✗")} above, or run ${pc.bold("whop-kit deploy")} to retry.`);
+      } else {
+        p.note(summary + nextSteps, "Your app is ready");
+        p.outro(`${pc.green("Happy building!")} ${pc.dim("— whop-kit")}`);
+      }
     } else {
       // No deploy attempted — local dev path
+      let summary = "";
       if (dbUrl) summary += `${pc.green("✓")} Database configured\n`;
       if (dbNote) summary += `${pc.yellow("!")} ${dbNote}\n`;
       summary += `\n`;
@@ -439,12 +445,7 @@ export default defineCommand({
       summary += `  ${pc.dim("walk you through connecting your Whop app.")}\n`;
       summary += `\n`;
       summary += `  ${pc.dim(`Or run ${pc.bold("whop-kit deploy")} to deploy + auto-configure.`)}`;
-    }
 
-    if (deployFailed) {
-      p.note(summary, pc.yellow("Setup incomplete"));
-      p.outro(`${pc.yellow("Deploy failed.")} Run ${pc.bold("whop-kit deploy")} to retry.`);
-    } else {
       p.note(summary, "Your app is ready");
       p.outro(`${pc.green("Happy building!")} ${pc.dim("— whop-kit")}`);
     }

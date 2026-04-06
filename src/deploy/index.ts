@@ -26,6 +26,7 @@ import {
   createWhopWebhook,
 } from "./whop-api.js";
 import { setupPlans, planResultToEnvVars } from "./plans.js";
+import { StepTracker } from "./tracker.js";
 import type { DeployResult } from "./types.js";
 
 const WEBHOOK_EVENTS = [
@@ -71,6 +72,7 @@ export async function runDeployPipeline(
   options: DeployPipelineOptions,
 ): Promise<DeployResult | null> {
   const { projectDir, projectName, databaseUrl, framework } = options;
+  const tracker = new StepTracker();
 
   // ══════════════════════════════════════════════════════════════════
   // STEP 0: Ask how they want to set up
@@ -152,8 +154,15 @@ export async function runDeployPipeline(
         }
 
         githubRepoUrl = await createGitHubRepo(projectDir, repoFullName);
+        if (githubRepoUrl) {
+          tracker.success("GitHub repo", githubRepoUrl);
+        } else {
+          tracker.failed("GitHub repo", "Run: gh repo create --private --source=. --push");
+        }
       }
     }
+  } else if (useGithub) {
+    tracker.skipped("GitHub repo");
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -216,8 +225,10 @@ export async function runDeployPipeline(
 
     // Deploy
     productionUrl = await vercelDeploy(projectDir);
-    if (!productionUrl) {
-      p.log.error("Deploy failed. Try: " + pc.bold(`cd ${projectName} && vercel deploy --prod`));
+    if (productionUrl) {
+      tracker.success("Vercel deploy", productionUrl);
+    } else {
+      tracker.failed("Vercel deploy", `Run: cd ${projectName} && vercel deploy --prod`);
     }
   }
 
@@ -261,7 +272,7 @@ export async function runDeployPipeline(
             validate: (v) => (!v ? "Required" : undefined),
           });
           if (p.isCancel(result)) {
-            return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+            return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
           }
           apiKey = result;
         }
@@ -274,16 +285,16 @@ export async function runDeployPipeline(
 
         if (attempt < 2) {
           const retry = await p.confirm({ message: "Try a different key?", initialValue: true });
-          if (p.isCancel(retry) || !retry) return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+          if (p.isCancel(retry) || !retry) return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
           apiKey = "";
         }
       }
 
-      if (!keyValid) return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+      if (!keyValid) return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
 
       // ── Step B: Get Company ID ───────────────────────────────────
       const companyId = await getCompanyId(apiKey);
-      if (!companyId) return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+      if (!companyId) return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
 
       // ── Step C: Create OAuth app ─────────────────────────────────
       const redirectUris = [
@@ -297,9 +308,10 @@ export async function runDeployPipeline(
       if (!app) {
         s.stop("Failed to create app");
         p.log.error("Create manually in the Whop dashboard.");
-        return { productionUrl, githubUrl: githubRepoUrl ?? undefined };
+        return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
       }
-      s.stop(`OAuth app created: ${pc.bold(app.id)}`);
+      s.stop(`App created: ${pc.bold(app.id)}`);
+      tracker.success("Whop app", app.id);
 
       // ── Step D: Set OAuth to Public mode ─────────────────────────
       const oauthUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
@@ -323,7 +335,14 @@ export async function runDeployPipeline(
         initialValue: true,
       });
       if (p.isCancel(oauthDone)) {
-        return { productionUrl, githubUrl: githubRepoUrl ?? undefined, whopAppId: app.id };
+        tracker.failed("OAuth Public mode", `Set to Public at: ${oauthUrl}`);
+        return { productionUrl, githubUrl: githubRepoUrl ?? undefined, whopAppId: app.id, tracker };
+      }
+
+      if (oauthDone) {
+        tracker.success("OAuth Public mode");
+      } else {
+        tracker.failed("OAuth Public mode", `Set to Public at: ${oauthUrl}`);
       }
 
       // ── Step E: Get App credentials ──────────────────────────────
@@ -363,24 +382,32 @@ export async function runDeployPipeline(
 
         if (appApiKey) {
           p.log.success(`Parsed: WHOP_API_KEY and APP_ID ${pc.dim(appId)}`);
+          tracker.success("App credentials");
         } else {
           // Maybe they just pasted the raw key
           const rawKey = envResult.trim();
           if (rawKey.startsWith("apik_")) {
             appApiKey = rawKey;
             p.log.success("API key received");
+            tracker.success("App credentials");
+          } else {
+            tracker.failed("App credentials", `Copy from: ${appUrl}`);
           }
         }
+      } else {
+        tracker.failed("App credentials", `Copy from: ${appUrl}`);
       }
 
-      // ── Step E: Create webhook ───────────────────────────────────
+      // ── Step F: Create webhook ───────────────────────────────────
       s = p.spinner();
       s.start("Creating webhook...");
       const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS, companyId);
       if (!webhook) {
-        s.stop("Failed (create manually in Whop dashboard)");
+        s.stop("Failed");
+        tracker.failed("Webhook", "Create manually in Whop dashboard → Webhooks");
       } else {
         s.stop("Webhook created");
+        tracker.success("Webhook");
       }
 
       // ── Step G: Set up pricing plans ────────────────────────────
@@ -397,7 +424,12 @@ export async function runDeployPipeline(
         if (planResult) {
           planEnvVars = planResultToEnvVars(planResult);
           p.log.success(`${planResult.tiers.length} paid tier(s) created${planResult.freePlanId ? " + free tier" : ""}`);
+          tracker.success("Pricing plans", `${planResult.tiers.length} tier(s)`);
+        } else {
+          tracker.failed("Pricing plans", "Run: npx whop-kit add plans");
         }
+      } else {
+        tracker.skipped("Pricing plans");
       }
 
       // ── Step H: Push all env vars to Vercel ─────────────────────
@@ -445,6 +477,7 @@ export async function runDeployPipeline(
         whopAppId: app.id,
         whopApiKey: appApiKey || undefined,
         webhookSecret: webhook?.secret,
+        tracker,
       };
     }
   }
@@ -452,5 +485,6 @@ export async function runDeployPipeline(
   return {
     productionUrl: productionUrl ?? "",
     githubUrl: githubRepoUrl ?? undefined,
+    tracker,
   };
 }
