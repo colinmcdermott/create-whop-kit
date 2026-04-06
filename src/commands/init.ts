@@ -403,6 +403,30 @@ export default defineCommand({
       }
     }
 
+    // ── Open in editor ─────────────────────────────────────────────────
+    const editors: Array<{ cmd: string; label: string }> = [];
+    if (exec("which cursor").success) editors.push({ cmd: "cursor", label: "Cursor" });
+    if (exec("which code").success) editors.push({ cmd: "code", label: "VS Code" });
+    if (exec("which windsurf").success) editors.push({ cmd: "windsurf", label: "Windsurf" });
+    if (exec("which zed").success) editors.push({ cmd: "zed", label: "Zed" });
+
+    if (editors.length > 0) {
+      const editorOptions = [
+        ...editors.map((e) => ({ value: e.cmd, label: e.label })),
+        { value: "skip", label: "Skip — I'll open it myself" },
+      ];
+
+      const editorChoice = await p.select({
+        message: "Open project in an editor?",
+        options: editorOptions,
+      });
+
+      if (!isCancelled(editorChoice) && editorChoice !== "skip") {
+        exec(`${editorChoice} "${projectDir}"`);
+        p.log.success(`Opened in ${editors.find((e) => e.cmd === editorChoice)?.label}`);
+      }
+    }
+
     // ── Summary ───────────────────────────────────────────────────────
     const tracker = deployResult?.tracker;
 
