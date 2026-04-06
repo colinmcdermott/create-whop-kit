@@ -53,7 +53,7 @@ export const TEMPLATES: Record<string, Template> = {
   },
   "saas:astro": {
     name: "Astro SaaS",
-    description: "SaaS with auth, payments, and webhooks",
+    description: "Full SaaS with dashboard, pricing, and Tailwind",
     repo: "colinmcdermott/whop-astro-starter",
     available: true,
   },
