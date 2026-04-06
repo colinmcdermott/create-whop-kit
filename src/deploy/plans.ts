@@ -277,19 +277,21 @@ export async function setupPlans(
 
 /**
  * Convert plan setup result to environment variables for the template.
+ * Next.js uses NEXT_PUBLIC_ prefix; others use plain WHOP_ prefix.
  */
-export function planResultToEnvVars(result: PlanSetupResult): Record<string, string> {
+export function planResultToEnvVars(result: PlanSetupResult, framework = "nextjs"): Record<string, string> {
   const vars: Record<string, string> = {};
+  const prefix = framework === "nextjs" ? "NEXT_PUBLIC_WHOP_" : "WHOP_";
 
   if (result.freePlanId) {
-    vars["NEXT_PUBLIC_WHOP_FREE_PLAN_ID"] = result.freePlanId;
+    vars[`${prefix}FREE_PLAN_ID`] = result.freePlanId;
   }
 
   for (const tier of result.tiers) {
     const KEY = tier.key.toUpperCase();
-    vars[`NEXT_PUBLIC_WHOP_${KEY}_PLAN_ID`] = tier.monthlyPlanId;
+    vars[`${prefix}${KEY}_PLAN_ID`] = tier.monthlyPlanId;
     if (tier.yearlyPlanId) {
-      vars[`NEXT_PUBLIC_WHOP_${KEY}_PLAN_ID_YEARLY`] = tier.yearlyPlanId;
+      vars[`${prefix}${KEY}_PLAN_ID_YEARLY`] = tier.yearlyPlanId;
     }
   }
 

@@ -297,9 +297,11 @@ export async function runDeployPipeline(
       if (!companyId) return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
 
       // ── Step C: Create OAuth app ─────────────────────────────────
+      // TanStack uses /auth/callback, Next.js and Astro use /api/auth/callback
+      const callbackPath = framework === "tanstack" ? "/auth/callback" : "/api/auth/callback";
       const redirectUris = [
-        "http://localhost:3000/api/auth/callback",
-        `${productionUrl}/api/auth/callback`,
+        `http://localhost:3000${callbackPath}`,
+        `${productionUrl}${callbackPath}`,
       ];
 
       let s = p.spinner();
@@ -417,7 +419,7 @@ export async function runDeployPipeline(
       if (!p.isCancel(setupPlanChoice) && setupPlanChoice) {
         const planResult = await setupPlans(apiKey, companyId);
         if (planResult) {
-          planEnvVars = planResultToEnvVars(planResult);
+          planEnvVars = planResultToEnvVars(planResult, framework);
           p.log.success(`${planResult.tiers.length} paid tier(s) created${planResult.freePlanId ? " + free tier" : ""}`);
           tracker.success("Pricing plans", `${planResult.tiers.length} tier(s)`);
         } else {
@@ -439,7 +441,8 @@ export async function runDeployPipeline(
         }
         if (appApiKey) envVars["WHOP_API_KEY"] = appApiKey;
         if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
-        envVars["NEXT_PUBLIC_APP_URL"] = productionUrl;
+        // App URL — Next.js uses NEXT_PUBLIC_ prefix
+        envVars[framework === "nextjs" ? "NEXT_PUBLIC_APP_URL" : "APP_URL"] = productionUrl;
 
         // Plan IDs
         Object.assign(envVars, planEnvVars);
