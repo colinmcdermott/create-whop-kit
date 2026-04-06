@@ -257,7 +257,7 @@ export async function runDeployPipeline(
         "Whop Company API Key",
       );
 
-      openUrl("https://whop.com/dashboard/developer");
+      // User clicks the URL in the instructions above
 
       let apiKey = options.whopCompanyKey ?? "";
       let keyValid = false;
@@ -327,8 +327,6 @@ export async function runDeployPipeline(
         "Enable OAuth (Public Mode)",
       );
 
-      openUrl(oauthUrl);
-
       const oauthDone = await p.confirm({
         message: "Have you set OAuth to Public mode?",
         initialValue: true,
@@ -355,8 +353,6 @@ export async function runDeployPipeline(
         ].join("\n"),
         "Copy App Credentials",
       );
-
-      openUrl(appUrl);
 
       let appApiKey = "";
       let appId = app.id;
