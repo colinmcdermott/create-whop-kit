@@ -323,7 +323,6 @@ export async function runDeployPipeline(
           "",
           `${pc.bold("1.")} Opening ${pc.cyan(oauthUrl)}`,
           `${pc.bold("2.")} Set Client mode to ${pc.bold('"Public"')}`,
-          `${pc.bold("3.")} Click Save`,
         ].join("\n"),
         "Enable OAuth (Public Mode)",
       );
