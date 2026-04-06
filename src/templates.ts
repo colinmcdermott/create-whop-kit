@@ -30,8 +30,8 @@ export const FRAMEWORKS: Record<string, { name: string; description: string; ava
   },
   tanstack: {
     name: "TanStack Start",
-    description: "Full-stack React with TanStack Router",
-    available: false,
+    description: "Full-stack React with type-safe routing",
+    available: true,
   },
   vite: {
     name: "Vite + React",
@@ -55,6 +55,12 @@ export const TEMPLATES: Record<string, Template> = {
     name: "Astro SaaS",
     description: "Full SaaS with dashboard, pricing, and Tailwind",
     repo: "colinmcdermott/whop-astro-starter",
+    available: true,
+  },
+  "saas:tanstack": {
+    name: "TanStack Start SaaS",
+    description: "Full SaaS with type-safe routing and server functions",
+    repo: "colinmcdermott/whop-tanstack-starter",
     available: true,
   },
   "blank:nextjs": {
