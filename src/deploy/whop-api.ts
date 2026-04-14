@@ -36,9 +36,9 @@ export async function getCompanyId(apiKey: string): Promise<string | null> {
       headers: headers(apiKey),
     });
     if (res.ok) {
-      const data = await res.json();
-      const companies = data.data || data;
-      if (Array.isArray(companies) && companies.length > 0) {
+      const data = (await res.json()) as { data?: { id: string }[] };
+      const companies = data.data || [];
+      if (companies.length > 0) {
         return companies[0].id;
       }
     }
@@ -79,7 +79,7 @@ export async function createWhopApp(
     });
 
     if (res.ok) {
-      const data = await res.json();
+      const data = (await res.json()) as WhopAppResult;
       return { id: data.id, client_secret: data.client_secret };
     }
 
@@ -89,6 +89,25 @@ export async function createWhopApp(
   } catch (err) {
     console.error("[Whop API] Create app error:", err);
     return null;
+  }
+}
+
+/**
+ * Set an app's OAuth client type to "public" (no client_secret needed for token exchange).
+ */
+export async function setOAuthPublicMode(
+  apiKey: string,
+  appId: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${WHOP_API}/apps/${appId}`, {
+      method: "PATCH",
+      headers: headers(apiKey),
+      body: JSON.stringify({ oauth_client_type: "public" }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -109,7 +128,7 @@ export async function createWhopWebhook(
     });
 
     if (res.ok) {
-      const data = await res.json();
+      const data = (await res.json()) as { id: string; webhook_secret?: string; secret?: string; signing_secret?: string };
       return {
         id: data.id,
         secret: data.webhook_secret || data.secret || data.signing_secret || "",

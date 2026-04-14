@@ -23,6 +23,7 @@ import {
   validateApiKey,
   getCompanyId,
   createWhopApp,
+  setOAuthPublicMode,
   createWhopWebhook,
 } from "./whop-api.js";
 import { setupPlans, planResultToEnvVars } from "./plans.js";
@@ -315,34 +316,18 @@ export async function runDeployPipeline(
       s.stop(`App created: ${pc.bold(app.id)}`);
       tracker.success("Whop app", app.id);
 
-      // ── Step D: Set OAuth to Public mode ─────────────────────────
-      const oauthUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
-      const appUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/`;
-
-      p.note(
-        [
-          `Set your app's OAuth to Public mode:`,
-          "",
-          `${pc.bold("1.")} Opening ${pc.cyan(oauthUrl)}`,
-          `${pc.bold("2.")} Set Client mode to ${pc.bold('"Public"')}`,
-        ].join("\n"),
-        "Enable OAuth (Public Mode)",
-      );
-
-      const oauthDone = await p.confirm({
-        message: "Have you set OAuth to Public mode?",
-        initialValue: true,
-      });
-      if (p.isCancel(oauthDone)) {
-        tracker.failed("OAuth Public mode", `Set to Public at: ${oauthUrl}`);
-        return { productionUrl, githubUrl: githubRepoUrl ?? undefined, whopAppId: app.id, tracker };
-      }
-
-      if (oauthDone) {
+      // ── Step D: Set OAuth to Public mode (automated) ─────────────
+      const oauthOk = await setOAuthPublicMode(apiKey, app.id);
+      if (oauthOk) {
         tracker.success("OAuth Public mode");
       } else {
+        const oauthUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
+        p.log.warning(`Could not set OAuth to Public mode automatically.`);
+        p.log.info(`Set it manually at: ${pc.cyan(oauthUrl)}`);
         tracker.failed("OAuth Public mode", `Set to Public at: ${oauthUrl}`);
       }
+
+      const appUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/`;
 
       // ── Step E: Get App credentials ──────────────────────────────
       p.note(
