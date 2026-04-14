@@ -58,7 +58,7 @@ async function createProduct(
       }),
     });
     if (res.ok) {
-      const data = await res.json();
+      const data = (await res.json()) as { id: string };
       return data.id;
     }
     const err = await res.text().catch(() => "");
@@ -98,7 +98,7 @@ async function createPlan(
     });
 
     if (res.ok) {
-      const data = await res.json();
+      const data = (await res.json()) as { id: string };
       return data.id;
     }
     const err = await res.text().catch(() => "");
