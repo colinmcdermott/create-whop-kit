@@ -1,6 +1,10 @@
 # create-whop-kit
 
+[![npm](https://img.shields.io/npm/v/create-whop-kit.svg)](https://www.npmjs.com/package/create-whop-kit)
+
 Scaffold, deploy, and manage [Whop](https://whop.com)-powered apps with [whop-kit](https://www.npmjs.com/package/whop-kit).
+
+Published on npm: **[create-whop-kit](https://www.npmjs.com/package/create-whop-kit)**
 
 ## Create a new project
 

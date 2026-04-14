@@ -7,7 +7,7 @@
   "author": "Colin McDermott",
   "repository": {
     "type": "git",
-    "url": "https://github.com/colinmcdermott/create-whop-kit"
+    "url": "https://github.com/whopio/create-whop-kit"
   },
   "bin": {
     "create-whop-kit": "./dist/cli-create.js",
