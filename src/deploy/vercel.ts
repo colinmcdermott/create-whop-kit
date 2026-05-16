@@ -3,46 +3,40 @@ import pc from "picocolors";
 import { exec, execInteractive, execWithStdin, hasCommand } from "../utils/exec.js";
 
 // ---------------------------------------------------------------------------
-// Installation & updates
+// Installation
 // ---------------------------------------------------------------------------
 
 export function isVercelInstalled(): boolean {
   return hasCommand("vercel");
 }
 
-export async function installOrUpdateVercel(): Promise<boolean> {
+/**
+ * Ensure the Vercel CLI is installed. If already installed, leave it alone —
+ * the Vercel CLI prints its own update banner. Auto-upgrading on every run
+ * is slow, noisy, and can EACCES on systems with restrictive global npm,
+ * which can be mistaken for an auth failure on the next step.
+ */
+export async function ensureVercelInstalled(): Promise<boolean> {
+  if (isVercelInstalled()) return true;
+
   const s = p.spinner();
-
-  if (isVercelInstalled()) {
-    const versionResult = exec("vercel --version");
-    const currentVersion = versionResult.stdout.replace(/[^0-9.]/g, "");
-
-    s.start("Checking for Vercel CLI updates...");
-    const updateResult = exec("npm install -g vercel@latest", undefined, 60_000);
-    if (updateResult.success) {
-      const newVersion = exec("vercel --version");
-      const newVer = newVersion.stdout.replace(/[^0-9.]/g, "");
-      if (newVer !== currentVersion) {
-        s.stop(`Vercel CLI updated: ${currentVersion} → ${newVer}`);
-      } else {
-        s.stop(`Vercel CLI up to date (v${currentVersion})`);
-      }
-    } else {
-      s.stop(`Vercel CLI v${currentVersion} (update check failed, continuing)`);
-    }
-    return true;
-  }
-
   s.start("Installing Vercel CLI...");
-  const result = exec("npm install -g vercel@latest");
-  if (result.success) {
+  const result = exec("npm install -g vercel@latest", undefined, 120_000);
+  if (result.success && isVercelInstalled()) {
     s.stop("Vercel CLI installed");
     return true;
   }
+
   s.stop("Failed to install Vercel CLI");
   p.log.error(`Install manually: ${pc.bold("npm install -g vercel@latest")}`);
+  if (result.stderr) {
+    p.log.info(pc.dim(result.stderr.split("\n").slice(0, 5).join("\n")));
+  }
   return false;
 }
+
+// Kept for backwards compatibility — same behaviour as ensureVercelInstalled now.
+export const installOrUpdateVercel = ensureVercelInstalled;
 
 // ---------------------------------------------------------------------------
 // Authentication
@@ -50,20 +44,83 @@ export async function installOrUpdateVercel(): Promise<boolean> {
 
 export function isVercelAuthenticated(): boolean {
   const result = exec("vercel whoami");
-  return result.success;
+  return result.success && result.stdout.trim().length > 0;
 }
 
 export function getVercelUser(): string | null {
   const result = exec("vercel whoami");
-  return result.success ? result.stdout.trim() : null;
+  if (!result.success) return null;
+  const out = result.stdout.trim();
+  return out.length > 0 ? out : null;
 }
 
-export async function vercelLogin(): Promise<boolean> {
-  p.log.info("You'll be redirected to Vercel to sign in (or create an account).");
-  console.log("");
+/**
+ * Run `vercel login` interactively. Returns { ok, stderr } so callers can
+ * surface the real reason on failure instead of bailing silently.
+ *
+ * The Vercel CLI uses OAuth 2.0 Device Flow — it shows a verification code,
+ * opens a browser, and waits for confirmation. We can't fully capture that
+ * output without breaking the interactive UX, so we run it inherited and
+ * then verify with `vercel whoami` afterward.
+ */
+export async function vercelLogin(): Promise<{ ok: boolean }> {
   const ok = execInteractive("vercel login");
-  console.log("");
-  return ok;
+  return { ok };
+}
+
+/**
+ * Ensure we have a working Vercel auth state.
+ *   1. If `vercel whoami` succeeds — saved auth.json or VERCEL_TOKEN env — use as-is.
+ *   2. Otherwise run interactive `vercel login` (OAuth device flow), retry up to 3×.
+ */
+export async function ensureVercelAuth(): Promise<{ ok: boolean; skipped?: boolean }> {
+  if (isVercelAuthenticated()) return { ok: true };
+
+  p.note(
+    [
+      "A browser tab will open to sign you in to Vercel.",
+      "Confirm the verification code shown in your terminal matches the one in the browser.",
+      "",
+      "If no browser opens, copy the URL the CLI prints into one manually.",
+    ].join("\n"),
+    "Vercel sign-in",
+  );
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    console.log("");
+    const { ok } = await vercelLogin();
+    console.log("");
+
+    if (ok && isVercelAuthenticated()) {
+      const user = getVercelUser();
+      p.log.success(`Signed in to Vercel${user ? ` as ${pc.bold(user)}` : ""}`);
+      return { ok: true };
+    }
+
+    // Login process exited non-zero, or whoami still says no. Surface whatever
+    // diagnostic info we can so the user isn't staring at a silent failure.
+    p.log.warning("Vercel sign-in didn't complete.");
+    const whoamiAfter = exec("vercel whoami");
+    if (whoamiAfter.stderr) {
+      p.log.info(pc.dim(`vercel whoami: ${whoamiAfter.stderr.split("\n")[0]}`));
+    }
+
+    if (attempt >= 2) break;
+
+    const choice = await p.select({
+      message: "What now?",
+      options: [
+        { value: "retry", label: "Try again" },
+        { value: "skip", label: "Skip Vercel for now", hint: "you can run whop-kit deploy later" },
+      ],
+    });
+
+    if (p.isCancel(choice) || choice === "skip") {
+      return { ok: false, skipped: true };
+    }
+  }
+
+  return { ok: false };
 }
 
 // ---------------------------------------------------------------------------

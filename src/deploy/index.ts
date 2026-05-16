@@ -2,14 +2,11 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { exec, execInteractive } from "../utils/exec.js";
 import {
-  installOrUpdateVercel,
-  isVercelAuthenticated,
-  getVercelUser,
-  vercelLogin,
+  ensureVercelInstalled,
+  ensureVercelAuth,
   vercelLink,
   vercelDeploy,
   vercelEnvSet,
-  vercelEnvSetBatch,
 } from "./vercel.js";
 import {
   isGhInstalled,
@@ -173,23 +170,24 @@ export async function runDeployPipeline(
   if (useVercel) {
     p.log.info(pc.bold("\n── Vercel ──────────────────────────────────────"));
 
-    // Install / update
-    const vercelOk = await installOrUpdateVercel();
+    // Install
+    const vercelOk = await ensureVercelInstalled();
     if (!vercelOk) {
-      p.log.error("Could not set up Vercel CLI.");
-      return githubRepoUrl ? { productionUrl: "", githubUrl: githubRepoUrl } : null;
+      tracker.failed("Vercel CLI", "Install: npm install -g vercel@latest");
+      return githubRepoUrl ? { productionUrl: "", githubUrl: githubRepoUrl, tracker } : null;
     }
 
-    // Auth
-    if (!isVercelAuthenticated()) {
-      const loginOk = await vercelLogin();
-      if (!loginOk) {
-        p.log.error("Vercel auth failed. Run " + pc.bold("whop-kit deploy") + " later.");
-        return githubRepoUrl ? { productionUrl: "", githubUrl: githubRepoUrl } : null;
+    // Auth — saved login if present, else interactive with retry
+    const auth = await ensureVercelAuth();
+    if (!auth.ok) {
+      if (auth.skipped) {
+        tracker.skipped("Vercel deploy");
+        p.log.info(`Skipped Vercel. Re-run later with ${pc.bold("whop-kit deploy")}.`);
+      } else {
+        tracker.failed("Vercel auth", `Retry: cd ${projectName} && whop-kit deploy`);
       }
+      return githubRepoUrl ? { productionUrl: "", githubUrl: githubRepoUrl, tracker } : null;
     }
-    const vercelUser = getVercelUser();
-    p.log.success(`Signed in${vercelUser ? ` as ${pc.bold(vercelUser)}` : ""}`);
 
     // Link
     await vercelLink(projectDir);
