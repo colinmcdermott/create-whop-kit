@@ -50,6 +50,8 @@ The CLI walks you through:
 After creating a project, use `whop-kit` to add features:
 
 ```bash
+npx whop-kit dev               # local dev server + public webhook tunnel
+npx whop-kit doctor            # diagnose env, auth, and project state
 npx whop-kit add plans         # create pricing plans on Whop
 npx whop-kit add email         # add Resend or SendGrid
 npx whop-kit add analytics     # add PostHog, GA, or Plausible
@@ -64,6 +66,49 @@ npx whop-kit open neon         # open Neon console
 npx whop-kit open vercel       # open Vercel dashboard
 npx whop-kit upgrade           # update whop-kit to latest
 ```
+
+### `whop-kit dev`
+
+Boots your local dev server *and* opens a public HTTPS tunnel to it, so
+Whop webhooks can hit your laptop during development without deploying.
+
+```
+◇ Tunnel ready (cloudflared)
+│
+●  Tunnel
+│  Public URL     https://random-words.trycloudflare.com
+│  Webhook URL    https://random-words.trycloudflare.com/api/webhooks/whop
+│
+●  Starting npm run dev on port 3000...
+```
+
+Uses `ngrok` if installed, otherwise falls back to `cloudflared` via `npx`
+(downloads on first run, no account needed). Paste the webhook URL into
+your Whop dashboard once and you're set — events stream to localhost
+until you `Ctrl+C`.
+
+### `whop-kit doctor`
+
+Runs preflight checks and surfaces fixable issues:
+
+```
+  Environment
+  ✓ Node.js              v20.11.0
+  ✓ git                  2.43.0
+  ✓ npm global prefix    /home/you/.npm-global
+  ✓ GitHub CLI           signed in as you
+  ⚠ Vercel CLI           not signed in
+    → Sign in during deploy, or run: vercel login
+  ✓ Whop API reachable   HTTP 401
+
+  Project
+  ✓ Project manifest     nextjs / saas / neon
+  ✓ .env.local           all required vars set
+```
+
+Catches the most common onboarding traps — wrong Node version, restrictive
+npm global prefix (the WSL / EACCES class), missing CLI auth, network
+issues, manifest drift, missing `.env.local` keys.
 
 ## Available configurations
 

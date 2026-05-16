@@ -86,7 +86,7 @@ export default defineCommand({
   },
   async run({ args }) {
     // Pre-flight checks
-    checkNodeVersion(18);
+    checkNodeVersion(20);
     checkGit();
 
     console.log("");

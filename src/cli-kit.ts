@@ -6,6 +6,8 @@ import catalog from "./commands/catalog.js";
 import deploy from "./commands/deploy.js";
 import open from "./commands/open.js";
 import upgrade from "./commands/upgrade.js";
+import doctor from "./commands/doctor.js";
+import dev from "./commands/dev.js";
 
 const main = defineCommand({
   meta: {
@@ -15,6 +17,8 @@ const main = defineCommand({
   },
   subCommands: {
     add,
+    dev,
+    doctor,
     status,
     env,
     catalog,

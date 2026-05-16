@@ -2,7 +2,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { hasCommand } from "./exec.js";
 
-export function checkNodeVersion(minimum = 18): void {
+export function checkNodeVersion(minimum = 20): void {
   const major = parseInt(process.versions.node.split(".")[0], 10);
   if (major < minimum) {
     p.log.error(

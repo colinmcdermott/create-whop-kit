@@ -1,10 +1,13 @@
 {
   "name": "create-whop-kit",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "description": "Scaffold and manage Whop-powered apps with whop-kit",
   "type": "module",
   "license": "MIT",
   "author": "Colin McDermott",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/whopio/create-whop-kit"
