@@ -3,29 +3,65 @@ import pc from "picocolors";
 import { exec, execInteractive, hasCommand } from "../utils/exec.js";
 import type { DbProvider, ProvisionResult } from "./types.js";
 
+/**
+ * Resolve a runnable Neon CLI command. Global npm installs frequently produce
+ * binaries that exist on PATH but EACCES on execute (especially on WSL),
+ * so we test that the binary actually runs and fall back to npx if not.
+ */
+function resolveNeonCmd(): string | null {
+  for (const candidate of ["neonctl", "neon"]) {
+    if (hasCommand(candidate) && exec(`${candidate} --version`).success) {
+      return candidate;
+    }
+  }
+  // Fall back to npx — runs from a user-owned cache, no global perms needed.
+  const npxOk = exec("npx -y neonctl@latest --version", undefined, 180_000).success;
+  return npxOk ? "npx -y neonctl@latest" : null;
+}
+
 export const neonProvider: DbProvider = {
   name: "Neon",
   description: "Serverless Postgres — free tier, scales to zero",
 
   isInstalled() {
-    return hasCommand("neonctl") || hasCommand("neon");
+    // We consider it "installed" if any runnable path exists (including npx).
+    return resolveNeonCmd() !== null;
   },
 
   async install() {
     const s = p.spinner();
     s.start("Installing neonctl...");
-    const result = exec("npm install -g neonctl");
-    if (result.success) {
+    const result = exec("npm install -g neonctl", undefined, 120_000);
+
+    // Verify the installed binary is actually runnable. On WSL with restrictive
+    // global npm prefixes the install can "succeed" but produce a binary that
+    // EACCES on execute. Fall back to npx in that case.
+    if (result.success && hasCommand("neonctl") && exec("neonctl --version").success) {
       s.stop("neonctl installed");
       return true;
     }
-    s.stop("Failed to install neonctl");
-    p.log.error(`Install manually: ${pc.bold("npm install -g neonctl")}`);
-    return false;
+
+    s.stop("Global install unavailable — using npx fallback");
+    if (result.stderr) {
+      p.log.info(pc.dim(result.stderr.split("\n").slice(0, 3).join("\n")));
+    }
+    p.log.info(
+      `Using ${pc.bold("npx neonctl@latest")} (first call is slower, no global install needed).`,
+    );
+    const npxOk = exec("npx -y neonctl@latest --version", undefined, 180_000).success;
+    if (!npxOk) {
+      p.log.error(`Install manually: ${pc.bold("npm install -g neonctl")}`);
+      return false;
+    }
+    return true;
   },
 
   async provision(projectName) {
-    const cli = hasCommand("neonctl") ? "neonctl" : "neon";
+    const cli = resolveNeonCmd();
+    if (!cli) {
+      p.log.error("Neon CLI is not runnable. Install manually: npm install -g neonctl");
+      return null;
+    }
 
     // ── Auth ──────────────────────────────────────────────────────
     p.log.step("Neon: checking authentication...");

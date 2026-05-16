@@ -3,39 +3,94 @@ import pc from "picocolors";
 import { exec, execInteractive, execWithStdin, hasCommand } from "../utils/exec.js";
 
 // ---------------------------------------------------------------------------
+// Command resolution
+// ---------------------------------------------------------------------------
+//
+// On WSL and other systems with restrictive global npm prefixes,
+// `npm install -g vercel` either fails outright or installs a binary
+// that can't execute (EACCES). To avoid pushing users to debug their npm
+// setup mid-onboarding, we resolve `vercel` once at the start of the
+// pipeline: prefer a working global install, otherwise fall back to
+// `npx -y vercel@latest` which runs from a user-owned cache.
+//
+// All command-running helpers below route through `vercelCmd()`.
+
+let _vercelCmd: string | null = null;
+let _vercelUsingNpx = false;
+
+function detectGlobalVercel(): boolean {
+  if (!hasCommand("vercel")) return false;
+  // Existence on PATH isn't enough — confirm it actually runs.
+  return exec("vercel --version").success;
+}
+
+export function vercelCmd(): string {
+  if (_vercelCmd) return _vercelCmd;
+  _vercelCmd = detectGlobalVercel() ? "vercel" : "npx -y vercel@latest";
+  _vercelUsingNpx = _vercelCmd.startsWith("npx");
+  return _vercelCmd;
+}
+
+export function vercelUsingNpx(): boolean {
+  vercelCmd();
+  return _vercelUsingNpx;
+}
+
+// ---------------------------------------------------------------------------
 // Installation
 // ---------------------------------------------------------------------------
 
 export function isVercelInstalled(): boolean {
-  return hasCommand("vercel");
+  return detectGlobalVercel();
 }
 
 /**
- * Ensure the Vercel CLI is installed. If already installed, leave it alone —
- * the Vercel CLI prints its own update banner. Auto-upgrading on every run
- * is slow, noisy, and can EACCES on systems with restrictive global npm,
- * which can be mistaken for an auth failure on the next step.
+ * Ensure we have *some* way to run Vercel. Order:
+ *   1. Working global `vercel` — use it as-is (the CLI prints its own update banner).
+ *   2. Try `npm install -g vercel@latest` once for users who don't have it.
+ *   3. Fall back to `npx -y vercel@latest` so we always have a runnable path,
+ *      even on systems where global npm is broken.
  */
 export async function ensureVercelInstalled(): Promise<boolean> {
-  if (isVercelInstalled()) return true;
+  if (detectGlobalVercel()) {
+    _vercelCmd = "vercel";
+    _vercelUsingNpx = false;
+    return true;
+  }
 
   const s = p.spinner();
   s.start("Installing Vercel CLI...");
   const result = exec("npm install -g vercel@latest", undefined, 120_000);
-  if (result.success && isVercelInstalled()) {
+  if (result.success && detectGlobalVercel()) {
     s.stop("Vercel CLI installed");
+    _vercelCmd = "vercel";
+    _vercelUsingNpx = false;
     return true;
   }
 
-  s.stop("Failed to install Vercel CLI");
-  p.log.error(`Install manually: ${pc.bold("npm install -g vercel@latest")}`);
+  // Global install failed or produced a non-runnable binary (EACCES on WSL etc).
+  // Fall back to npx — runs from a user-owned cache, no global perms needed.
+  s.stop("Global install unavailable — using npx fallback");
   if (result.stderr) {
-    p.log.info(pc.dim(result.stderr.split("\n").slice(0, 5).join("\n")));
+    p.log.info(pc.dim(result.stderr.split("\n").slice(0, 3).join("\n")));
   }
-  return false;
+  p.log.info(
+    `Using ${pc.bold("npx vercel@latest")} (first call is slower, no global install needed).`,
+  );
+  _vercelCmd = "npx -y vercel@latest";
+  _vercelUsingNpx = true;
+
+  // Verify the npx path actually resolves something runnable.
+  const verify = exec(`${_vercelCmd} --version`, undefined, 180_000);
+  if (!verify.success) {
+    p.log.error("Could not run Vercel via npx either.");
+    if (verify.stderr) p.log.info(pc.dim(verify.stderr.split("\n").slice(0, 5).join("\n")));
+    return false;
+  }
+  return true;
 }
 
-// Kept for backwards compatibility — same behaviour as ensureVercelInstalled now.
+// Kept for backwards compatibility.
 export const installOrUpdateVercel = ensureVercelInstalled;
 
 // ---------------------------------------------------------------------------
@@ -43,28 +98,25 @@ export const installOrUpdateVercel = ensureVercelInstalled;
 // ---------------------------------------------------------------------------
 
 export function isVercelAuthenticated(): boolean {
-  const result = exec("vercel whoami");
+  const result = exec(`${vercelCmd()} whoami`);
   return result.success && result.stdout.trim().length > 0;
 }
 
 export function getVercelUser(): string | null {
-  const result = exec("vercel whoami");
+  const result = exec(`${vercelCmd()} whoami`);
   if (!result.success) return null;
   const out = result.stdout.trim();
   return out.length > 0 ? out : null;
 }
 
 /**
- * Run `vercel login` interactively. Returns { ok, stderr } so callers can
- * surface the real reason on failure instead of bailing silently.
- *
- * The Vercel CLI uses OAuth 2.0 Device Flow — it shows a verification code,
- * opens a browser, and waits for confirmation. We can't fully capture that
- * output without breaking the interactive UX, so we run it inherited and
- * then verify with `vercel whoami` afterward.
+ * Run `vercel login` interactively. The Vercel CLI uses OAuth 2.0 Device Flow —
+ * shows a verification code, opens a browser, waits for confirmation. We run it
+ * with inherited stdio and verify with `whoami` afterwards (exit 0 doesn't
+ * always mean the device flow actually completed).
  */
 export async function vercelLogin(): Promise<{ ok: boolean }> {
-  const ok = execInteractive("vercel login");
+  const ok = execInteractive(`${vercelCmd()} login`);
   return { ok };
 }
 
@@ -97,10 +149,8 @@ export async function ensureVercelAuth(): Promise<{ ok: boolean; skipped?: boole
       return { ok: true };
     }
 
-    // Login process exited non-zero, or whoami still says no. Surface whatever
-    // diagnostic info we can so the user isn't staring at a silent failure.
     p.log.warning("Vercel sign-in didn't complete.");
-    const whoamiAfter = exec("vercel whoami");
+    const whoamiAfter = exec(`${vercelCmd()} whoami`);
     if (whoamiAfter.stderr) {
       p.log.info(pc.dim(`vercel whoami: ${whoamiAfter.stderr.split("\n")[0]}`));
     }
@@ -130,7 +180,7 @@ export async function ensureVercelAuth(): Promise<{ ok: boolean; skipped?: boole
 export async function vercelLink(projectDir: string): Promise<boolean> {
   p.log.step("Vercel: linking project...");
   console.log("");
-  const ok = execInteractive("vercel link --yes", projectDir);
+  const ok = execInteractive(`${vercelCmd()} link --yes`, projectDir);
   console.log("");
   return ok;
 }
@@ -147,8 +197,7 @@ export async function vercelDeploy(projectDir: string): Promise<string | null> {
   p.log.step("Vercel: deploying to production...");
   console.log("");
 
-  // Interactive deploy — user sees build logs in real time
-  const ok = execInteractive("vercel deploy --prod --yes", projectDir);
+  const ok = execInteractive(`${vercelCmd()} deploy --prod --yes`, projectDir);
   console.log("");
 
   if (!ok) {
@@ -195,7 +244,7 @@ export function vercelEnvSet(
   projectDir?: string,
 ): boolean {
   const result = execWithStdin(
-    `vercel env add ${key} ${environment} --force`,
+    `${vercelCmd()} env add ${key} ${environment} --force`,
     value,
     projectDir,
   );

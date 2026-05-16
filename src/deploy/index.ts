@@ -7,6 +7,7 @@ import {
   vercelLink,
   vercelDeploy,
   vercelEnvSet,
+  vercelCmd,
 } from "./vercel.js";
 import {
   isGhInstalled,
@@ -196,7 +197,7 @@ export async function runDeployPipeline(
     if (githubRepoUrl) {
       const s = p.spinner();
       s.start("Connecting GitHub to Vercel (auto-deploy on push)...");
-      const connectResult = exec(`vercel git connect ${githubRepoUrl}`, projectDir, 30_000);
+      const connectResult = exec(`${vercelCmd()} git connect ${githubRepoUrl}`, projectDir, 30_000);
       if (connectResult.success) {
         s.stop("Connected — every git push will auto-deploy");
       } else {
@@ -443,7 +444,7 @@ export async function runDeployPipeline(
         // Redeploy — show live build output
         p.log.step("Redeploying with full configuration...");
         console.log("");
-        const redeployOk = execInteractive("vercel deploy --prod --yes", projectDir);
+        const redeployOk = execInteractive(`${vercelCmd()} deploy --prod --yes`, projectDir);
         console.log("");
         if (redeployOk) {
           p.log.success("Redeployed");
