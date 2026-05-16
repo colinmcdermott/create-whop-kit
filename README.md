@@ -47,24 +47,41 @@ The CLI walks you through:
 
 ## Manage your project
 
-After creating a project, use `whop-kit` to add features:
+After creating a project, use the `whop-kit` command. It's bundled inside
+the `create-whop-kit` package, so install once and run anywhere:
 
 ```bash
-npx whop-kit dev               # local dev server + public webhook tunnel
-npx whop-kit doctor            # diagnose env, auth, and project state
-npx whop-kit add plans         # create pricing plans on Whop
-npx whop-kit add email         # add Resend or SendGrid
-npx whop-kit add analytics     # add PostHog, GA, or Plausible
-npx whop-kit add webhook-event # scaffold a new event handler
-npx whop-kit status            # project health check
-npx whop-kit deploy            # deploy (or redeploy) to Vercel + Whop
-npx whop-kit env               # view env vars (masked)
-npx whop-kit env --reveal      # show actual values
-npx whop-kit catalog           # list all available services
-npx whop-kit open whop         # open Whop dashboard
-npx whop-kit open neon         # open Neon console
-npx whop-kit open vercel       # open Vercel dashboard
-npx whop-kit upgrade           # update whop-kit to latest
+npm install -g create-whop-kit   # one-time install — gives you `whop-kit` everywhere
+```
+
+Then:
+
+```bash
+whop-kit dev               # local dev server + public webhook tunnel
+whop-kit doctor            # diagnose env, auth, and project state
+whop-kit add plans         # create pricing plans on Whop
+whop-kit add email         # add Resend or SendGrid
+whop-kit add analytics     # add PostHog, GA, or Plausible
+whop-kit add webhook-event # scaffold a new event handler
+whop-kit status            # project health check
+whop-kit deploy            # deploy (or redeploy) to Vercel + Whop
+whop-kit env               # view env vars (masked)
+whop-kit env --reveal      # show actual values
+whop-kit catalog           # list all available services
+whop-kit open whop         # open Whop dashboard
+whop-kit open neon         # open Neon console
+whop-kit open vercel       # open Vercel dashboard
+whop-kit upgrade           # update whop-kit to latest
+```
+
+**Don't want a global install?** Use `npx` with the `-p` flag — npm needs the
+package name (`create-whop-kit`) explicitly because the binary name
+(`whop-kit`) differs:
+
+```bash
+npx -p create-whop-kit whop-kit doctor
+npx -p create-whop-kit whop-kit dev
+# …etc.
 ```
 
 ### `whop-kit dev`
