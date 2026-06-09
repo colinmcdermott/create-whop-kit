@@ -3,6 +3,7 @@ import pc from "picocolors";
 import { defineCommand } from "citty";
 import { readManifest } from "../scaffolding/manifest.js";
 import { runDeployPipeline } from "../deploy/index.js";
+import { resolveWhopEnvironment } from "../whop-env.js";
 import { basename } from "node:path";
 
 export default defineCommand({
@@ -38,6 +39,7 @@ export default defineCommand({
       projectName,
       framework: manifest.framework,
       whopCompanyKey: args["whop-company-key"],
+      environment: resolveWhopEnvironment(manifest.environment),
     });
 
     if (result) {

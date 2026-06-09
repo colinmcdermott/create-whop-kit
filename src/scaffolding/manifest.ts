@@ -9,6 +9,8 @@ export interface Manifest {
   features: string[];
   templateVersion: string;
   createdAt: string;
+  /** Whop environment: "production" (default) or "sandbox" */
+  environment?: string;
 }
 
 const MANIFEST_DIR = ".whop";

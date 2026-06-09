@@ -1,8 +1,7 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { WhopAppResult, WhopWebhookResult } from "./types.js";
-
-const WHOP_API = "https://api.whop.com/api/v1";
+import { whopHosts, type WhopEnvironment } from "../whop-env.js";
 
 function headers(apiKey: string) {
   return {
@@ -14,9 +13,12 @@ function headers(apiKey: string) {
 /**
  * Validate a Company API key by listing apps.
  */
-export async function validateApiKey(apiKey: string): Promise<boolean> {
+export async function validateApiKey(
+  apiKey: string,
+  environment: WhopEnvironment = "production",
+): Promise<boolean> {
   try {
-    const res = await fetch(`${WHOP_API}/apps?per_page=1`, {
+    const res = await fetch(`${whopHosts(environment).api}/apps?per_page=1`, {
       headers: headers(apiKey),
     });
     return res.ok;
@@ -29,10 +31,13 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
  * Get the company ID for this API key.
  * Tries /companies first, falls back to asking the user.
  */
-export async function getCompanyId(apiKey: string): Promise<string | null> {
+export async function getCompanyId(
+  apiKey: string,
+  environment: WhopEnvironment = "production",
+): Promise<string | null> {
   // Try the API first
   try {
-    const res = await fetch(`${WHOP_API}/companies`, {
+    const res = await fetch(`${whopHosts(environment).api}/companies`, {
       headers: headers(apiKey),
     });
     if (res.ok) {
@@ -66,9 +71,10 @@ export async function createWhopApp(
   name: string,
   redirectUris: string[],
   companyId: string,
+  environment: WhopEnvironment = "production",
 ): Promise<WhopAppResult | null> {
   try {
-    const res = await fetch(`${WHOP_API}/apps`, {
+    const res = await fetch(`${whopHosts(environment).api}/apps`, {
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify({
@@ -94,20 +100,26 @@ export async function createWhopApp(
 
 /**
  * Set an app's OAuth client type to "public" (no client_secret needed for token exchange).
+ * Returns `{ ok: true }` on success, otherwise an error string suitable for surfacing
+ * to the user — previously this returned a bare boolean and silently swallowed
+ * the API response, hiding real failures.
  */
 export async function setOAuthPublicMode(
   apiKey: string,
   appId: string,
-): Promise<boolean> {
+  environment: WhopEnvironment = "production",
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${WHOP_API}/apps/${appId}`, {
+    const res = await fetch(`${whopHosts(environment).api}/apps/${appId}`, {
       method: "PATCH",
       headers: headers(apiKey),
       body: JSON.stringify({ oauth_client_type: "public" }),
     });
-    return res.ok;
-  } catch {
-    return false;
+    if (res.ok) return { ok: true };
+    const body = await res.text().catch(() => "");
+    return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -119,9 +131,10 @@ export async function createWhopWebhook(
   url: string,
   events: string[],
   companyId: string,
+  environment: WhopEnvironment = "production",
 ): Promise<WhopWebhookResult | null> {
   try {
-    const res = await fetch(`${WHOP_API}/webhooks`, {
+    const res = await fetch(`${whopHosts(environment).api}/webhooks`, {
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify({ url, events, resource_id: companyId }),

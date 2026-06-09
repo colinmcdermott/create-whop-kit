@@ -2,13 +2,23 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { defineCommand } from "citty";
 import { exec } from "../utils/exec.js";
+import { readManifest } from "../scaffolding/manifest.js";
+import { whopHosts, resolveWhopEnvironment } from "../whop-env.js";
 
-const DASHBOARDS: Record<string, { name: string; url: string }> = {
-  whop: { name: "Whop Developer Dashboard", url: "https://whop.com/dashboard/developer" },
-  neon: { name: "Neon Console", url: "https://console.neon.tech" },
-  supabase: { name: "Supabase Dashboard", url: "https://supabase.com/dashboard" },
-  vercel: { name: "Vercel Dashboard", url: "https://vercel.com/dashboard" },
-};
+function getDashboards(): Record<string, { name: string; url: string }> {
+  // Sandbox projects open the sandbox dashboard (read from .whop/config.json)
+  const environment = resolveWhopEnvironment(readManifest(".")?.environment);
+  const whopWeb = whopHosts(environment).web;
+  return {
+    whop: {
+      name: environment === "sandbox" ? "Whop Sandbox Developer Dashboard" : "Whop Developer Dashboard",
+      url: `${whopWeb}/dashboard/developer`,
+    },
+    neon: { name: "Neon Console", url: "https://console.neon.tech" },
+    supabase: { name: "Supabase Dashboard", url: "https://supabase.com/dashboard" },
+    vercel: { name: "Vercel Dashboard", url: "https://vercel.com/dashboard" },
+  };
+}
 
 function openUrl(url: string): void {
   const platform = process.platform;
@@ -25,11 +35,12 @@ export default defineCommand({
   args: {
     target: {
       type: "positional",
-      description: `Dashboard to open: ${Object.keys(DASHBOARDS).join(", ")}`,
+      description: "Dashboard to open: whop, neon, supabase, vercel",
       required: false,
     },
   },
   async run({ args }) {
+    const DASHBOARDS = getDashboards();
     let target = args.target;
 
     if (!target) {

@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 
 export interface ExecResult {
   stdout: string;
@@ -36,6 +36,58 @@ export function execInteractive(cmd: string, cwd?: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Run a command, streaming stdout/stderr to the user's terminal *and*
+ * capturing them so the caller can parse the output afterwards. Use this
+ * when the user needs to see live progress (e.g. `vercel deploy --prod`)
+ * but we also need to extract values from the output (like the alias URL).
+ */
+export function execInteractiveCapture(
+  cmd: string,
+  cwd?: string,
+  timeoutMs = 600_000,
+): Promise<{ ok: boolean; output: string }> {
+  return new Promise((resolve) => {
+    let output = "";
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve({ ok, output });
+    };
+
+    const child = spawn(cmd, {
+      cwd,
+      shell: true,
+      stdio: ["inherit", "pipe", "pipe"],
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(false);
+    }, timeoutMs);
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      process.stdout.write(text);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      process.stderr.write(text);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      finish(code === 0);
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      finish(false);
+    });
+  });
 }
 
 /**

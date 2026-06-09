@@ -27,6 +27,7 @@ import {
 import { setupPlans, planResultToEnvVars } from "./plans.js";
 import { StepTracker } from "./tracker.js";
 import type { DeployResult } from "./types.js";
+import { whopHosts, whopEnvVarName, type WhopEnvironment } from "../whop-env.js";
 
 const WEBHOOK_EVENTS = [
   "payment.succeeded",
@@ -44,6 +45,8 @@ interface DeployPipelineOptions {
   databaseUrl?: string;
   framework: string;
   whopCompanyKey?: string;
+  /** Whop environment — sandbox uses sandbox.whop.com / sandbox-api.whop.com */
+  environment?: WhopEnvironment;
 }
 
 function openUrl(url: string): void {
@@ -71,6 +74,8 @@ export async function runDeployPipeline(
   options: DeployPipelineOptions,
 ): Promise<DeployResult | null> {
   const { projectDir, projectName, databaseUrl, framework } = options;
+  const environment: WhopEnvironment = options.environment ?? "production";
+  const whopWeb = whopHosts(environment).web;
   const tracker = new StepTracker();
 
   // ══════════════════════════════════════════════════════════════════
@@ -197,7 +202,7 @@ export async function runDeployPipeline(
     if (githubRepoUrl) {
       const s = p.spinner();
       s.start("Connecting GitHub to Vercel (auto-deploy on push)...");
-      const connectResult = exec(`${vercelCmd()} git connect ${githubRepoUrl}`, projectDir, 30_000);
+      const connectResult = exec(`${vercelCmd()} git connect "${githubRepoUrl}"`, projectDir, 30_000);
       if (connectResult.success) {
         s.stop("Connected — every git push will auto-deploy");
       } else {
@@ -240,15 +245,18 @@ export async function runDeployPipeline(
     p.log.info(pc.bold("\n── Whop ────────────────────────────────────────"));
 
     const connectWhop = await p.confirm({
-      message: "Connect to Whop? (creates app with OAuth + webhooks automatically)",
+      message: `Connect to Whop${environment === "sandbox" ? " sandbox" : ""}? (creates app with OAuth + webhooks automatically)`,
       initialValue: true,
     });
 
     if (!p.isCancel(connectWhop) && connectWhop) {
+      if (environment === "sandbox") {
+        p.log.info(pc.yellow("Sandbox mode — use credentials from sandbox.whop.com, not production."));
+      }
       // ── Step A: Get Company API key ──────────────────────────────
       p.note(
         [
-          `${pc.bold("1.")} Go to ${pc.cyan("https://whop.com/dashboard/developer")}`,
+          `${pc.bold("1.")} Go to ${pc.cyan(`${whopWeb}/dashboard/developer`)}`,
           `${pc.bold("2.")} Under "Company API Keys", click ${pc.bold('"Create"')}`,
           `${pc.bold("3.")} Name it (e.g. "${projectName}")`,
           `${pc.bold("4.")} Set "Inherit permissions from role" to ${pc.bold('"Owner"')}`,
@@ -279,7 +287,7 @@ export async function runDeployPipeline(
 
         let s = p.spinner();
         s.start("Validating...");
-        keyValid = await validateApiKey(apiKey);
+        keyValid = await validateApiKey(apiKey, environment);
         if (keyValid) { s.stop("API key valid"); break; }
         s.stop("API key invalid");
 
@@ -293,7 +301,7 @@ export async function runDeployPipeline(
       if (!keyValid) return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
 
       // ── Step B: Get Company ID ───────────────────────────────────
-      const companyId = await getCompanyId(apiKey);
+      const companyId = await getCompanyId(apiKey, environment);
       if (!companyId) return { productionUrl, githubUrl: githubRepoUrl ?? undefined, tracker };
 
       // ── Step C: Create OAuth app ─────────────────────────────────
@@ -306,7 +314,7 @@ export async function runDeployPipeline(
 
       let s = p.spinner();
       s.start("Creating Whop OAuth app...");
-      const app = await createWhopApp(apiKey, projectName, redirectUris, companyId);
+      const app = await createWhopApp(apiKey, projectName, redirectUris, companyId, environment);
       if (!app) {
         s.stop("Failed to create app");
         p.log.error("Create manually in the Whop dashboard.");
@@ -315,18 +323,26 @@ export async function runDeployPipeline(
       s.stop(`App created: ${pc.bold(app.id)}`);
       tracker.success("Whop app", app.id);
 
+      // Echo the redirect URIs we registered. If OAuth fails later, the user
+      // can sanity-check these against the URL they're actually loading.
+      p.log.info(`OAuth redirect URIs registered:\n  ${redirectUris.map((u) => pc.cyan(u)).join("\n  ")}`);
+
       // ── Step D: Set OAuth to Public mode (automated) ─────────────
-      const oauthOk = await setOAuthPublicMode(apiKey, app.id);
-      if (oauthOk) {
+      s = p.spinner();
+      s.start("Setting OAuth client type to public...");
+      const oauthResult = await setOAuthPublicMode(apiKey, app.id, environment);
+      const oauthUrl = `${whopWeb}/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
+      if (oauthResult.ok) {
+        s.stop("OAuth client type: public");
         tracker.success("OAuth Public mode");
       } else {
-        const oauthUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/oauth/`;
-        p.log.warning(`Could not set OAuth to Public mode automatically.`);
+        s.stop("Could not set OAuth client type to public");
+        p.log.warning(`Whop API rejected the request: ${pc.dim(oauthResult.error)}`);
         p.log.info(`Set it manually at: ${pc.cyan(oauthUrl)}`);
         tracker.failed("OAuth Public mode", `Set to Public at: ${oauthUrl}`);
       }
 
-      const appUrl = `https://whop.com/dashboard/${companyId}/developer/apps/${app.id}/`;
+      const appUrl = `${whopWeb}/dashboard/${companyId}/developer/apps/${app.id}/`;
 
       // ── Step E: Get App credentials ──────────────────────────────
       p.note(
@@ -382,7 +398,7 @@ export async function runDeployPipeline(
       // ── Step F: Create webhook ───────────────────────────────────
       s = p.spinner();
       s.start("Creating webhook...");
-      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS, companyId);
+      const webhook = await createWhopWebhook(apiKey, `${productionUrl}/api/webhooks/whop`, WEBHOOK_EVENTS, companyId, environment);
       if (!webhook) {
         s.stop("Failed");
         tracker.failed("Webhook", "Create manually in Whop dashboard → Webhooks");
@@ -401,7 +417,7 @@ export async function runDeployPipeline(
 
       let planEnvVars: Record<string, string> = {};
       if (!p.isCancel(setupPlanChoice) && setupPlanChoice) {
-        const planResult = await setupPlans(apiKey, companyId);
+        const planResult = await setupPlans(apiKey, companyId, environment);
         if (planResult) {
           planEnvVars = planResultToEnvVars(planResult, framework);
           p.log.success(`${planResult.tiers.length} paid tier(s) created${planResult.freePlanId ? " + free tier" : ""}`);
@@ -425,6 +441,9 @@ export async function runDeployPipeline(
         }
         if (appApiKey) envVars["WHOP_API_KEY"] = appApiKey;
         if (webhook?.secret) envVars["WHOP_WEBHOOK_SECRET"] = webhook.secret;
+        if (environment === "sandbox") {
+          envVars[whopEnvVarName(framework)] = "sandbox";
+        }
         // App URL — Next.js uses NEXT_PUBLIC_ prefix
         envVars[framework === "nextjs" ? "NEXT_PUBLIC_APP_URL" : "APP_URL"] = productionUrl;
 

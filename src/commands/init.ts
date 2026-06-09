@@ -5,16 +5,30 @@ import pc from "picocolors";
 import { defineCommand } from "citty";
 import { FRAMEWORKS, APP_TYPES, getTemplate } from "../templates.js";
 import { DB_PROVIDERS } from "../providers/index.js";
-import { checkNodeVersion, checkGit, validateDatabaseUrl, validateWhopAppId } from "../utils/checks.js";
+import { checkNodeVersion, checkGit, validateDatabaseUrl } from "../utils/checks.js";
 import { detectPackageManager, exec } from "../utils/exec.js";
 import { cleanupDir } from "../utils/cleanup.js";
 import { cloneTemplate, updatePackageName, initGit } from "../scaffolding/clone.js";
+import { whopEnvVarName, type WhopEnvironment } from "../whop-env.js";
 import { writeEnvFile } from "../scaffolding/env-file.js";
 import { createManifest } from "../scaffolding/manifest.js";
 import { installProviderSkills, writeProjectContext } from "../scaffolding/skills.js";
 
 function isCancelled(value: unknown): value is symbol {
   return p.isCancel(value);
+}
+
+// Project names end up in shell commands (git, gh, provider CLIs) and
+// package.json — restrict to a safe charset rather than relying on quoting.
+const PROJECT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+function validateProjectName(name: string): string | undefined {
+  if (!name) return "Project name is required";
+  if (!PROJECT_NAME_RE.test(name)) {
+    return "Use only letters, numbers, dots, dashes, and underscores (must start with a letter or number)";
+  }
+  if (name.length > 100) return "Project name is too long";
+  return undefined;
 }
 
 export default defineCommand({
@@ -74,6 +88,11 @@ export default defineCommand({
       description: "Skip Vercel deployment",
       default: false,
     },
+    sandbox: {
+      type: "boolean",
+      description: "Use Whop's sandbox environment (sandbox.whop.com) for testing",
+      default: false,
+    },
     "whop-company-key": {
       type: "string",
       description: "Whop Company API key for automatic app creation",
@@ -108,15 +127,23 @@ export default defineCommand({
         message: "Project name",
         placeholder: "my-app",
         validate: (v) => {
-          if (!v) return "Project name is required";
-          if (existsSync(resolve(v))) return `Directory "${v}" already exists`;
+          const invalid = validateProjectName(v ?? "");
+          if (invalid) return invalid;
+          if (v && existsSync(resolve(v))) return `Directory "${v}" already exists`;
         },
       });
       if (isCancelled(result)) { p.cancel("Cancelled."); process.exit(0); }
       projectName = result;
-    } else if (existsSync(resolve(projectName))) {
-      p.log.error(`Directory "${projectName}" already exists`);
-      process.exit(1);
+    } else {
+      const invalid = validateProjectName(projectName);
+      if (invalid) {
+        p.log.error(invalid);
+        process.exit(1);
+      }
+      if (existsSync(resolve(projectName))) {
+        p.log.error(`Directory "${projectName}" already exists`);
+        process.exit(1);
+      }
     }
 
     // ── App type ──────────────────────────────────────────────────────
@@ -156,6 +183,20 @@ export default defineCommand({
       p.log.error(`No template available for ${appType} + ${framework}. Try a different combination.`);
       process.exit(1);
     }
+
+    // ── Whop environment ──────────────────────────────────────────────
+    // Sandbox (sandbox.whop.com) is Whop's isolated test environment:
+    // separate apps, API keys, plans, and users, with test cards at checkout.
+    let useSandbox = args.sandbox;
+    if (!useSandbox && !isNonInteractive && !args.yes) {
+      const result = await p.confirm({
+        message: `Start in Whop sandbox mode? ${pc.dim("(test payments on sandbox.whop.com, no real charges — switch to production later)")}`,
+        initialValue: false,
+      });
+      if (isCancelled(result)) { p.cancel("Cancelled."); process.exit(0); }
+      useSandbox = result;
+    }
+    const whopEnvironment: WhopEnvironment = useSandbox ? "sandbox" : "production";
 
     // ── Database ──────────────────────────────────────────────────────
     let database = args.db;
@@ -279,6 +320,7 @@ export default defineCommand({
     }
     if (apiKey) envVars["WHOP_API_KEY"] = apiKey;
     if (webhookSecret) envVars["WHOP_WEBHOOK_SECRET"] = webhookSecret;
+    if (useSandbox) envVars[whopEnvVarName(framework)] = "sandbox";
 
     if (Object.keys(envVars).length > 0) {
       s.start("Configuring environment...");
@@ -293,6 +335,7 @@ export default defineCommand({
       database,
       features: [],
       templateVersion: "0.2.0",
+      environment: whopEnvironment,
     });
 
     // ── Agent skills ──────────────────────────────────────────────────
@@ -361,6 +404,7 @@ export default defineCommand({
           databaseUrl: dbUrl || undefined,
           framework,
           whopCompanyKey: args["whop-company-key"],
+          environment: whopEnvironment,
         });
       }
     }

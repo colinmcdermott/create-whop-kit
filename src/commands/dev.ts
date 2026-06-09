@@ -5,6 +5,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { defineCommand } from "citty";
 import { readManifest } from "../scaffolding/manifest.js";
+import { whopHosts, resolveWhopEnvironment } from "../whop-env.js";
 import { detectPackageManager } from "../utils/exec.js";
 import { startTunnel } from "../utils/tunnel.js";
 
@@ -78,6 +79,7 @@ export default defineCommand({
 
     const path = webhookPath(manifest.framework);
     const fullWebhookUrl = `${tunnel.url}${path}`;
+    const whopWeb = whopHosts(resolveWhopEnvironment(manifest.environment)).web;
 
     p.note(
       [
@@ -85,7 +87,7 @@ export default defineCommand({
         `${pc.bold("Webhook URL")}    ${pc.cyan(fullWebhookUrl)}`,
         "",
         `Paste the webhook URL into your Whop dashboard so events hit your laptop:`,
-        `  ${pc.dim("https://whop.com/dashboard/developer → your app → Webhooks → URL")}`,
+        `  ${pc.dim(`${whopWeb}/dashboard/developer → your app → Webhooks → URL`)}`,
         "",
         `${pc.dim("This URL only lives while this command is running.")}`,
       ].join("\n"),

@@ -53,7 +53,7 @@ export async function createGitHubRepo(
 
   // Step 1: Create the repo (without pushing — avoids propagation delay issues)
   const createResult = exec(
-    `gh repo create ${projectName} --private --source=.`,
+    `gh repo create "${projectName}" --private --source=.`,
     projectDir,
     60_000,
   );
@@ -63,7 +63,7 @@ export async function createGitHubRepo(
     if (stderr.includes("already exists")) {
       s.stop(`Repository "${projectName}" already exists`);
       // Set remote if not already set
-      exec(`git remote add origin https://github.com/$(gh api user --jq .login)/${projectName}.git`, projectDir);
+      exec(`git remote add origin "https://github.com/$(gh api user --jq .login)/${projectName}.git"`, projectDir);
     } else {
       s.stop("Could not create GitHub repo");
       if (stderr) p.log.error(pc.dim(stderr.substring(0, 200)));
@@ -89,7 +89,7 @@ export async function createGitHubRepo(
       s = p.spinner();
       s.start("Pushing code to GitHub...");
     }
-    pushOk = exec(`git push -u origin ${branch}`, projectDir, 30_000).success;
+    pushOk = exec(`git push -u origin "${branch}"`, projectDir, 30_000).success;
     if (pushOk) break;
   }
 

@@ -8,6 +8,8 @@ export interface EnvValues {
   WHOP_API_KEY?: string;
   WHOP_WEBHOOK_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
+  NEXT_PUBLIC_WHOP_ENVIRONMENT?: string;
+  WHOP_ENVIRONMENT?: string; // non-Next.js frameworks (no NEXT_PUBLIC prefix)
   [key: string]: string | undefined;
 }
 
@@ -27,6 +29,7 @@ export function writeEnvFile(projectDir: string, values: EnvValues): void {
   if (existsSync(examplePath)) {
     // Read .env.example and replace placeholder values
     let content = readFileSync(examplePath, "utf-8");
+    const missing: string[] = [];
 
     for (const [key, value] of Object.entries(filled)) {
       // Match: KEY="placeholder" or KEY=placeholder or # KEY="placeholder"
@@ -35,8 +38,18 @@ export function writeEnvFile(projectDir: string, values: EnvValues): void {
         "m",
       );
       if (pattern.test(content)) {
-        content = content.replace(pattern, `${key}="${value}"`);
+        // Replacer function so `$&`/`$1`-style sequences in the value are
+        // written literally instead of being treated as substitution patterns
+        content = content.replace(pattern, () => `${key}="${value}"`);
+      } else {
+        // Key not present in the template's .env.example (e.g. older
+        // template version) — append it instead of silently dropping it.
+        missing.push(`${key}="${value}"`);
       }
+    }
+
+    if (missing.length > 0) {
+      content = content.replace(/\n*$/, "\n\n") + missing.join("\n") + "\n";
     }
 
     writeFileSync(envPath, content);

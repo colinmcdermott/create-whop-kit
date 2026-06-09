@@ -17,7 +17,9 @@ export function appendEnvVar(projectDir: string, key: string, value: string): vo
   const pattern = new RegExp(`^(#\\s*)?${key}=.*$`, "m");
 
   if (pattern.test(content)) {
-    content = content.replace(pattern, `${key}="${value}"`);
+    // Replacer function so `$&`/`$1`-style sequences in the value are
+    // written literally instead of being treated as substitution patterns
+    content = content.replace(pattern, () => `${key}="${value}"`);
   } else {
     content = content.trimEnd() + `\n${key}="${value}"\n`;
   }

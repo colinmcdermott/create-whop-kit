@@ -205,7 +205,12 @@ npx create-whop-kit my-app --framework nextjs --db later --skip-deploy --yes
 
 # Preview what would be created
 npx create-whop-kit my-app --framework nextjs --db neon --dry-run
+
+# Start in Whop sandbox mode (test payments on sandbox.whop.com, no real charges)
+npx create-whop-kit my-app --sandbox
 ```
+
+**Sandbox:** `--sandbox` (or answering yes to the sandbox prompt) targets Whop's isolated [sandbox environment](https://docs.whop.com/developer/guides/sandbox) — the CLI writes `NEXT_PUBLIC_WHOP_ENVIRONMENT=sandbox` (or `WHOP_ENVIRONMENT` for non-Next.js), provisions the Whop app/plans/webhook on `sandbox-api.whop.com`, and points all dashboard links at `sandbox.whop.com`. Create your sandbox credentials at https://sandbox.whop.com/dashboard/developer.
 
 **Tip:** Pass `--framework` and `--db` to skip the setup questions and go straight to deployment and Whop configuration — the important parts.
 

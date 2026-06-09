@@ -1,8 +1,7 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { exec } from "../utils/exec.js";
-
-const WHOP_API = "https://api.whop.com/api/v1";
+import { whopHosts, type WhopEnvironment } from "../whop-env.js";
 
 function headers(apiKey: string) {
   return {
@@ -46,9 +45,10 @@ async function createProduct(
   apiKey: string,
   companyId: string,
   title: string,
+  environment: WhopEnvironment,
 ): Promise<string | null> {
   try {
-    const res = await fetch(`${WHOP_API}/products`, {
+    const res = await fetch(`${whopHosts(environment).api}/products`, {
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify({
@@ -75,6 +75,7 @@ async function createPlan(
   productId: string,
   price: number,
   billingPeriod: number, // 30 for monthly, 365 for yearly
+  environment: WhopEnvironment,
 ): Promise<string | null> {
   try {
     const body: Record<string, unknown> = {
@@ -91,7 +92,7 @@ async function createPlan(
       body.billing_period = billingPeriod;
     }
 
-    const res = await fetch(`${WHOP_API}/plans`, {
+    const res = await fetch(`${whopHosts(environment).api}/plans`, {
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify(body),
@@ -119,6 +120,7 @@ async function createPlan(
 export async function setupPlans(
   apiKey: string,
   companyId: string,
+  environment: WhopEnvironment = "production",
 ): Promise<PlanSetupResult | null> {
 
   // How many paid tiers?
@@ -221,9 +223,9 @@ export async function setupPlans(
   if (includeFree) {
     const s = p.spinner();
     s.start("Creating Free tier...");
-    const productId = await createProduct(apiKey, companyId, "Free");
+    const productId = await createProduct(apiKey, companyId, "Free", environment);
     if (productId) {
-      const planId = await createPlan(apiKey, companyId, productId, 0, 0);
+      const planId = await createPlan(apiKey, companyId, productId, 0, 0, environment);
       if (planId) {
         freePlanId = planId;
         s.stop(`Free tier created: ${pc.dim(planId)}`);
@@ -240,14 +242,14 @@ export async function setupPlans(
     const s = p.spinner();
     s.start(`Creating ${tier.name} tier...`);
 
-    const productId = await createProduct(apiKey, companyId, tier.name);
+    const productId = await createProduct(apiKey, companyId, tier.name, environment);
     if (!productId) {
       s.stop(`Failed to create ${tier.name} product`);
       continue;
     }
 
     // Monthly plan
-    const monthlyPlanId = await createPlan(apiKey, companyId, productId, tier.monthlyPrice, 30);
+    const monthlyPlanId = await createPlan(apiKey, companyId, productId, tier.monthlyPrice, 30, environment);
     if (!monthlyPlanId) {
       s.stop(`Failed to create ${tier.name} monthly plan`);
       continue;
@@ -256,7 +258,7 @@ export async function setupPlans(
     // Yearly plan
     let yearlyPlanId: string | null = null;
     if (includeYearly && tier.yearlyPrice > 0) {
-      yearlyPlanId = await createPlan(apiKey, companyId, productId, tier.yearlyPrice, 365);
+      yearlyPlanId = await createPlan(apiKey, companyId, productId, tier.yearlyPrice, 365, environment);
     }
 
     s.stop(`${tier.name}: ${pc.dim(monthlyPlanId)}${yearlyPlanId ? ` + ${pc.dim(yearlyPlanId)}` : ""}`);

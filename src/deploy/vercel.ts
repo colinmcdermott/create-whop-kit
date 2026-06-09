@@ -1,6 +1,41 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec, execInteractive, execWithStdin, hasCommand } from "../utils/exec.js";
+import { exec, execInteractive, execInteractiveCapture, execWithStdin, hasCommand } from "../utils/exec.js";
+
+// Strip ANSI color escapes so regex matching works on captured CLI output.
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+/**
+ * Parse the canonical production URL from `vercel deploy --prod` output.
+ *
+ * The CLI prints two lines we care about:
+ *   ▲ Production  https://<project>-<hash>-<org>.vercel.app    ← per-deploy URL, changes each push
+ *   ▲ Aliased     https://<project>.vercel.app                 ← stable production alias
+ *
+ * We want the Aliased URL because it's the one the user (and OAuth) will hit.
+ * If Vercel had to disambiguate the project subdomain (someone else owns
+ * `ai-imagegen.vercel.app`), the alias might be `ai-imagegen-chi.vercel.app`
+ * — which is exactly why guessing `${projectName}.vercel.app` is unsafe.
+ */
+export function parseDeployUrl(output: string): { aliased?: string; production?: string } {
+  const clean = stripAnsi(output);
+  const urlRe = /(https?:\/\/[^\s]+\.vercel\.app)/;
+  const aliased = clean
+    .split("\n")
+    .map((l) => l.match(/Aliased\s+(https?:\/\/\S+)/i)?.[1])
+    .find((u): u is string => Boolean(u));
+  const production = clean
+    .split("\n")
+    .map((l) => l.match(/Production\s+(https?:\/\/\S+)/i)?.[1])
+    .find((u): u is string => Boolean(u));
+  return {
+    aliased: aliased ?? undefined,
+    production: production ?? clean.match(urlRe)?.[1],
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Command resolution
@@ -197,7 +232,10 @@ export async function vercelDeploy(projectDir: string): Promise<string | null> {
   p.log.step("Vercel: deploying to production...");
   console.log("");
 
-  const ok = execInteractive(`${vercelCmd()} deploy --prod --yes`, projectDir);
+  const { ok, output } = await execInteractiveCapture(
+    `${vercelCmd()} deploy --prod --yes`,
+    projectDir,
+  );
   console.log("");
 
   if (!ok) {
@@ -205,25 +243,22 @@ export async function vercelDeploy(projectDir: string): Promise<string | null> {
     return null;
   }
 
-  // Extract URL from .vercel/project.json — the most reliable method
-  // Vercel always creates this file during link/deploy
-  try {
-    const { readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const projectJson = JSON.parse(
-      readFileSync(join(projectDir, ".vercel", "project.json"), "utf-8"),
-    );
-    if (projectJson.projectName) {
-      const url = `https://${projectJson.projectName}.vercel.app`;
-      p.log.success(`Deployed to ${pc.cyan(url)}`);
-      return url;
-    }
-  } catch { /* no project.json */ }
+  // Parse the actual production URL from the deploy output. The CLI prints
+  // "Aliased https://<canonical>.vercel.app" — the URL real users hit and
+  // the one we must register as the OAuth redirect URI. Guessing this from
+  // `.vercel/project.json`'s projectName breaks whenever the bare subdomain
+  // is already taken and Vercel falls back to e.g. `ai-imagegen-chi.vercel.app`.
+  const parsed = parseDeployUrl(output);
+  const url = parsed.aliased ?? parsed.production;
+  if (url) {
+    p.log.success(`Deployed to ${pc.cyan(url)}`);
+    return url;
+  }
 
   // Fallback: ask the user — the URL was shown in the build output above
-  p.log.info("The deployment URL was shown in the build output above (after 'Aliased:')");
+  p.log.info("Could not detect the deployment URL automatically.");
   const manual = await p.text({
-    message: "Paste your Vercel production URL",
+    message: "Paste your Vercel production URL (from the 'Aliased' line above)",
     placeholder: "https://your-app.vercel.app",
     validate: (v) => {
       if (!v?.startsWith("https://")) return "Must be a https:// URL";
