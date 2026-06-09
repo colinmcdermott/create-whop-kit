@@ -4,6 +4,7 @@ import { defineCommand } from "citty";
 import { readManifest } from "../scaffolding/manifest.js";
 import { runDeployPipeline } from "../deploy/index.js";
 import { resolveWhopEnvironment } from "../whop-env.js";
+import { validateProjectName } from "../utils/checks.js";
 import { basename } from "node:path";
 
 export default defineCommand({
@@ -32,7 +33,19 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const projectName = basename(process.cwd());
+    // The directory name becomes the GitHub repo name and reaches shell
+    // commands — apply the same charset validation as init, and ask for a
+    // safe name when the directory name doesn't qualify.
+    let projectName = basename(process.cwd());
+    if (validateProjectName(projectName)) {
+      const result = await p.text({
+        message: "Repo/project name (directory name contains unsupported characters)",
+        placeholder: "my-app",
+        validate: (v) => validateProjectName(v ?? ""),
+      });
+      if (p.isCancel(result)) { p.cancel("Cancelled."); process.exit(0); }
+      projectName = result;
+    }
 
     const result = await runDeployPipeline({
       projectDir: ".",

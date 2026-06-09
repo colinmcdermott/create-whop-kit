@@ -6,7 +6,7 @@ import {
   ensureVercelAuth,
   vercelLink,
   vercelDeploy,
-  vercelEnvSet,
+  vercelEnvSetAll,
   vercelCmd,
 } from "./vercel.js";
 import {
@@ -47,24 +47,6 @@ interface DeployPipelineOptions {
   whopCompanyKey?: string;
   /** Whop environment — sandbox uses sandbox.whop.com / sandbox-api.whop.com */
   environment?: WhopEnvironment;
-}
-
-function openUrl(url: string): void {
-  const platform = process.platform;
-  if (platform === "darwin") {
-    exec(`open "${url}"`);
-  } else if (platform === "win32") {
-    exec(`start "" "${url}"`);
-  } else {
-    // Try WSL first (wslview or cmd.exe), then xdg-open
-    const wsl = exec(`wslview "${url}"`);
-    if (!wsl.success) {
-      const cmd = exec(`cmd.exe /c start "" "${url.replace(/&/g, "^&")}"`);
-      if (!cmd.success) {
-        exec(`xdg-open "${url}"`);
-      }
-    }
-  }
 }
 
 /**
@@ -165,8 +147,6 @@ export async function runDeployPipeline(
         }
       }
     }
-  } else if (useGithub) {
-    tracker.skipped("GitHub repo");
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -210,22 +190,12 @@ export async function runDeployPipeline(
       }
     }
 
-    // Set DATABASE_URL — one spinner per environment so user sees progress
+    // Set DATABASE_URL across all three environments concurrently
     if (databaseUrl) {
-      let s = p.spinner();
-      s.start("Setting DATABASE_URL → production...");
-      vercelEnvSet("DATABASE_URL", databaseUrl, "production", projectDir);
-      s.stop("DATABASE_URL → production ✓");
-
-      s = p.spinner();
-      s.start("Setting DATABASE_URL → preview...");
-      vercelEnvSet("DATABASE_URL", databaseUrl, "preview", projectDir);
-      s.stop("DATABASE_URL → preview ✓");
-
-      s = p.spinner();
-      s.start("Setting DATABASE_URL → development...");
-      vercelEnvSet("DATABASE_URL", databaseUrl, "development", projectDir);
-      s.stop("DATABASE_URL → development ✓");
+      const s = p.spinner();
+      s.start("Setting DATABASE_URL (production, preview, development)...");
+      const ok = await vercelEnvSetAll("DATABASE_URL", databaseUrl, projectDir);
+      s.stop(ok ? "DATABASE_URL set ✓" : "DATABASE_URL — some environments failed (set manually in Vercel)");
     }
 
     // Deploy
@@ -402,6 +372,11 @@ export async function runDeployPipeline(
       if (!webhook) {
         s.stop("Failed");
         tracker.failed("Webhook", "Create manually in Whop dashboard → Webhooks");
+      } else if (!webhook.secret) {
+        // Webhook exists but the API returned no signing secret — without it
+        // the deployed app can't verify events, so don't report success.
+        s.stop("Webhook created, but no secret returned");
+        tracker.failed("Webhook secret", "Copy the secret from Whop dashboard → Webhooks and set WHOP_WEBHOOK_SECRET");
       } else {
         s.stop("Webhook created");
         tracker.success("Webhook");
@@ -454,10 +429,8 @@ export async function runDeployPipeline(
           if (!value) continue;
           const vs = p.spinner();
           vs.start(`Pushing ${key}...`);
-          vercelEnvSet(key, value, "production", projectDir);
-          vercelEnvSet(key, value, "preview", projectDir);
-          vercelEnvSet(key, value, "development", projectDir);
-          vs.stop(`${key} ✓`);
+          const ok = await vercelEnvSetAll(key, value, projectDir);
+          vs.stop(ok ? `${key} ✓` : `${key} — failed (set manually in Vercel)`);
         }
 
         // Redeploy — show live build output

@@ -12,19 +12,19 @@ export function isGhAuthenticated(): boolean {
 }
 
 export async function installGh(): Promise<boolean> {
-  const s = p.spinner();
-  s.start("Installing GitHub CLI...");
+  // The GitHub CLI is NOT on npm — the npm package "gh" is an unrelated,
+  // deprecated project. Point users at the official installers instead.
+  const platform = process.platform;
+  const hint =
+    platform === "darwin"
+      ? "brew install gh"
+      : platform === "win32"
+        ? "winget install GitHub.cli"
+        : "sudo apt install gh   (or see https://cli.github.com)";
 
-  // Try npm first (works everywhere)
-  const result = exec("npm install -g gh", undefined, 60_000);
-  if (result.success && hasCommand("gh")) {
-    s.stop("GitHub CLI installed");
-    return true;
-  }
-
-  s.stop("Could not auto-install GitHub CLI");
-  p.log.info("Install manually:");
-  p.log.info(pc.bold("  https://cli.github.com"));
+  p.log.info("Install the GitHub CLI, then re-run this command:");
+  p.log.info(pc.bold(`  ${hint}`));
+  p.log.info(pc.dim("  Docs: https://cli.github.com"));
   return false;
 }
 
@@ -62,8 +62,12 @@ export async function createGitHubRepo(
     const stderr = createResult.stderr || createResult.stdout;
     if (stderr.includes("already exists")) {
       s.stop(`Repository "${projectName}" already exists`);
-      // Set remote if not already set
-      exec(`git remote add origin "https://github.com/$(gh api user --jq .login)/${projectName}.git"`, projectDir);
+      // Set remote if not already set — resolve the login in JS rather than
+      // nesting a $() command substitution inside the shell string
+      const login = exec("gh api user --jq .login").stdout.trim();
+      if (login) {
+        exec(`git remote add origin "https://github.com/${login}/${projectName}.git"`, projectDir);
+      }
     } else {
       s.stop("Could not create GitHub repo");
       if (stderr) p.log.error(pc.dim(stderr.substring(0, 200)));
@@ -106,14 +110,6 @@ export async function createGitHubRepo(
   }
 
   return `https://github.com/${projectName}`;
-}
-
-/**
- * Get the GitHub repo URL for the current project.
- */
-export function getGitHubRepoUrl(projectDir: string): string | null {
-  const result = exec("gh repo view --json url --jq .url", projectDir);
-  return result.success ? result.stdout.trim() : null;
 }
 
 /**

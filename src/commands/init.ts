@@ -3,9 +3,10 @@ import { existsSync } from "node:fs";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { defineCommand } from "citty";
+import pkg from "../../package.json" with { type: "json" };
 import { FRAMEWORKS, APP_TYPES, getTemplate } from "../templates.js";
 import { DB_PROVIDERS } from "../providers/index.js";
-import { checkNodeVersion, checkGit, validateDatabaseUrl } from "../utils/checks.js";
+import { checkNodeVersion, checkGit, validateDatabaseUrl, validateProjectName } from "../utils/checks.js";
 import { detectPackageManager, exec } from "../utils/exec.js";
 import { cleanupDir } from "../utils/cleanup.js";
 import { cloneTemplate, updatePackageName, initGit } from "../scaffolding/clone.js";
@@ -24,23 +25,10 @@ function brand(text: string): string {
   return pc.isColorSupported ? `\x1b[38;2;250;70;22m${text}\x1b[39m` : text;
 }
 
-// Project names end up in shell commands (git, gh, provider CLIs) and
-// package.json — restrict to a safe charset rather than relying on quoting.
-const PROJECT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
-
-function validateProjectName(name: string): string | undefined {
-  if (!name) return "Project name is required";
-  if (!PROJECT_NAME_RE.test(name)) {
-    return "Use only letters, numbers, dots, dashes, and underscores (must start with a letter or number)";
-  }
-  if (name.length > 100) return "Project name is too long";
-  return undefined;
-}
-
 export default defineCommand({
   meta: {
     name: "create-whop-kit",
-    version: "1.0.0",
+    version: pkg.version,
     description: "Scaffold a new Whop-powered app with whop-kit",
   },
   args: {
@@ -335,14 +323,17 @@ export default defineCommand({
     }
 
     // ── Manifest ──────────────────────────────────────────────────────
-    createManifest(projectDir, {
+    // One object feeds both .whop/config.json and project-context.md so the
+    // two files can't drift apart.
+    const manifestData = {
       framework,
       appType,
       database,
-      features: [],
-      templateVersion: "0.2.0",
+      features: [] as string[],
+      templateVersion: pkg.version,
       environment: whopEnvironment,
-    });
+    };
+    createManifest(projectDir, manifestData);
 
     // ── Agent skills ──────────────────────────────────────────────────
     if (database !== "later" && database !== "manual") {
@@ -361,11 +352,11 @@ export default defineCommand({
     if (apiKey) envStatus["WHOP_API_KEY"] = true;
     if (webhookSecret) envStatus["WHOP_WEBHOOK_SECRET"] = true;
 
-    const manifest = {
-      framework, appType, database, features: [] as string[],
-      templateVersion: "0.4.0", createdAt: new Date().toISOString(),
-    };
-    writeProjectContext(projectDir, { version: 1, ...manifest }, envStatus);
+    writeProjectContext(
+      projectDir,
+      { version: 1, createdAt: new Date().toISOString(), ...manifestData },
+      envStatus,
+    );
 
     // ── Install dependencies ──────────────────────────────────────────
     const pm = detectPackageManager();

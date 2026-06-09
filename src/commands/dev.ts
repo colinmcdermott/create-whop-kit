@@ -22,11 +22,9 @@ function detectDevScript(projectDir: string): { script: string; port: number } {
   return { script, port: 3000 };
 }
 
-function webhookPath(framework: string): string {
-  // All scaffolded templates expose the webhook at /api/webhooks/whop.
-  // (TanStack and Astro routes both land at the same URL path.)
-  return "/api/webhooks/whop";
-}
+// All scaffolded templates expose the webhook at /api/webhooks/whop
+// (TanStack and Astro routes both land at the same URL path).
+const WEBHOOK_PATH = "/api/webhooks/whop";
 
 export default defineCommand({
   meta: {
@@ -57,8 +55,8 @@ export default defineCommand({
     }
 
     const pm = detectPackageManager();
-    const devCmd = pm === "npm" ? "npm" : pm;
-    const devArgs = pm === "npm" ? ["run", detected.script] : ["run", detected.script];
+    const devCmd = pm;
+    const devArgs = ["run", detected.script];
 
     // ── Start tunnel first so its URL is ready when the server boots ────
     const s = p.spinner();
@@ -77,8 +75,7 @@ export default defineCommand({
     }
     s.stop(`Tunnel ready (${tunnel.provider})`);
 
-    const path = webhookPath(manifest.framework);
-    const fullWebhookUrl = `${tunnel.url}${path}`;
+    const fullWebhookUrl = `${tunnel.url}${WEBHOOK_PATH}`;
     const whopWeb = whopHosts(resolveWhopEnvironment(manifest.environment)).web;
 
     p.note(

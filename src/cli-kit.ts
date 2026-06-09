@@ -1,4 +1,5 @@
 import { defineCommand, runMain } from "citty";
+import pkg from "../package.json" with { type: "json" };
 import add from "./commands/add.js";
 import status from "./commands/status.js";
 import env from "./commands/env.js";
@@ -12,7 +13,7 @@ import dev from "./commands/dev.js";
 const main = defineCommand({
   meta: {
     name: "whop-kit",
-    version: "1.0.0",
+    version: pkg.version,
     description: "Manage your Whop project",
   },
   subCommands: {

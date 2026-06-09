@@ -28,9 +28,15 @@ export function validateDatabaseUrl(url: string): string | undefined {
   return undefined;
 }
 
-export function validateWhopAppId(id: string): string | undefined {
-  if (id && !id.startsWith("app_")) {
-    return 'Whop App IDs start with "app_"';
+// Project names end up in shell commands (git, gh, provider CLIs) and
+// package.json — restrict to a safe charset rather than relying on quoting.
+const PROJECT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+export function validateProjectName(name: string): string | undefined {
+  if (!name) return "Project name is required";
+  if (!PROJECT_NAME_RE.test(name)) {
+    return "Use only letters, numbers, dots, dashes, and underscores (must start with a letter or number)";
   }
+  if (name.length > 100) return "Project name is too long";
   return undefined;
 }

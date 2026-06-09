@@ -10,6 +10,13 @@ function headers(apiKey: string) {
   };
 }
 
+// Every call carries a timeout so a stalled connection can't hang the
+// deploy wizard indefinitely (Node 20+).
+const FETCH_TIMEOUT_MS = 15_000;
+function fetchOpts(): { signal: AbortSignal } {
+  return { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
+}
+
 /**
  * Validate a Company API key by listing apps.
  */
@@ -20,9 +27,14 @@ export async function validateApiKey(
   try {
     const res = await fetch(`${whopHosts(environment).api}/apps?per_page=1`, {
       headers: headers(apiKey),
+      ...fetchOpts(),
     });
     return res.ok;
-  } catch {
+  } catch (err) {
+    // Network failure is not the same as an invalid key — say so
+    console.error(
+      `[Whop API] Could not reach Whop to validate the key: ${err instanceof Error ? err.message : err}`,
+    );
     return false;
   }
 }
@@ -39,6 +51,7 @@ export async function getCompanyId(
   try {
     const res = await fetch(`${whopHosts(environment).api}/companies`, {
       headers: headers(apiKey),
+      ...fetchOpts(),
     });
     if (res.ok) {
       const data = (await res.json()) as { data?: { id: string }[] };
@@ -82,10 +95,15 @@ export async function createWhopApp(
         company_id: companyId,
         redirect_uris: redirectUris,
       }),
+      ...fetchOpts(),
     });
 
     if (res.ok) {
       const data = (await res.json()) as WhopAppResult;
+      if (typeof data.id !== "string" || !data.id) {
+        console.error("[Whop API] Create app returned no app ID");
+        return null;
+      }
       return { id: data.id, client_secret: data.client_secret };
     }
 
@@ -114,6 +132,7 @@ export async function setOAuthPublicMode(
       method: "PATCH",
       headers: headers(apiKey),
       body: JSON.stringify({ oauth_client_type: "public" }),
+      ...fetchOpts(),
     });
     if (res.ok) return { ok: true };
     const body = await res.text().catch(() => "");
@@ -138,6 +157,7 @@ export async function createWhopWebhook(
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify({ url, events, resource_id: companyId }),
+      ...fetchOpts(),
     });
 
     if (res.ok) {

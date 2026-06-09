@@ -33,10 +33,12 @@ function pickProvider(): { provider: TunnelProvider; cmd: string; args: (port: n
     };
   }
   // cloudflared via npx — downloads the binary on first run, no account needed.
+  // Pinned to an exact version: this is a community wrapper package executed
+  // with full user privileges, so never auto-run whatever @latest becomes.
   return {
     provider: "cloudflared",
     cmd: "npx",
-    args: (port) => ["-y", "cloudflared@latest", "tunnel", "--url", `http://localhost:${port}`],
+    args: (port) => ["-y", "cloudflared@0.7.1", "tunnel", "--url", `http://localhost:${port}`],
   };
 }
 

@@ -70,14 +70,20 @@ export const supabaseProvider: DbProvider = {
         const orgInput = await p.text({
           message: "Supabase Organization ID",
           placeholder: "Find in dashboard: supabase.com/dashboard",
-          validate: (v) => (!v ? "Required" : undefined),
+          validate: (v) => {
+            if (!v) return "Required";
+            // Reaches a shell command — keep to a safe charset
+            if (!/^[a-zA-Z0-9-]+$/.test(v)) return "Org IDs contain only letters, numbers, and dashes";
+          },
         });
         if (p.isCancel(orgInput)) return null;
         orgId = orgInput;
       }
     }
 
-    // Generate a random password
+    // Generate a random password.
+    // Note: the Supabase CLI only accepts this via --db-password, which is
+    // briefly visible in the local process list while the command runs.
     const password = Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, "0"))
       .join("");
@@ -97,6 +103,10 @@ export const supabaseProvider: DbProvider = {
     }
 
     s.stop("Supabase project created");
+
+    // The connection string below needs this password — without it the user
+    // would have to reset the DB password in the dashboard.
+    p.log.warning(`Database password (save it now, it won't be shown again): ${pc.bold(password)}`);
 
     // Supabase CLI can't retrieve the connection string — guide the user
     p.log.info("");

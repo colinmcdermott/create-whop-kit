@@ -22,9 +22,22 @@ function getDashboards(): Record<string, { name: string; url: string }> {
 
 function openUrl(url: string): void {
   const platform = process.platform;
-  if (platform === "darwin") exec(`open "${url}"`);
-  else if (platform === "win32") exec(`start "${url}"`);
-  else exec(`xdg-open "${url}"`);
+  if (platform === "darwin") {
+    exec(`open "${url}"`);
+  } else if (platform === "win32") {
+    // First quoted arg to `start` is the window title — pass "" so the URL
+    // is treated as the target
+    exec(`start "" "${url}"`);
+  } else {
+    // Try WSL first (wslview or cmd.exe), then xdg-open
+    const wsl = exec(`wslview "${url}"`);
+    if (!wsl.success) {
+      const cmd = exec(`cmd.exe /c start "" "${url.replace(/&/g, "^&")}"`);
+      if (!cmd.success) {
+        exec(`xdg-open "${url}"`);
+      }
+    }
+  }
 }
 
 export default defineCommand({

@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec, execInteractive, execInteractiveCapture, execWithStdin, hasCommand } from "../utils/exec.js";
+import { exec, execInteractive, execInteractiveCapture, execWithStdin, execWithStdinAsync, hasCommand } from "../utils/exec.js";
 
 // Strip ANSI color escapes so regex matching works on captured CLI output.
 function stripAnsi(s: string): string {
@@ -66,18 +66,9 @@ export function vercelCmd(): string {
   return _vercelCmd;
 }
 
-export function vercelUsingNpx(): boolean {
-  vercelCmd();
-  return _vercelUsingNpx;
-}
-
 // ---------------------------------------------------------------------------
 // Installation
 // ---------------------------------------------------------------------------
-
-export function isVercelInstalled(): boolean {
-  return detectGlobalVercel();
-}
 
 /**
  * Ensure we have *some* way to run Vercel. Order:
@@ -124,9 +115,6 @@ export async function ensureVercelInstalled(): Promise<boolean> {
   }
   return true;
 }
-
-// Kept for backwards compatibility.
-export const installOrUpdateVercel = ensureVercelInstalled;
 
 // ---------------------------------------------------------------------------
 // Authentication
@@ -286,21 +274,25 @@ export function vercelEnvSet(
   return result.success;
 }
 
-export function vercelEnvSetBatch(
-  vars: Record<string, string>,
+/**
+ * Set one env var across all three Vercel environments concurrently —
+ * each `vercel env add` is a separate CLI call + API round-trip, so the
+ * 3x parallelism cuts wall time correspondingly.
+ */
+export async function vercelEnvSetAll(
+  key: string,
+  value: string,
   projectDir?: string,
-): { success: string[]; failed: string[] } {
-  const success: string[] = [];
-  const failed: string[] = [];
-
-  for (const [key, value] of Object.entries(vars)) {
-    if (!value) continue;
-    const ok = vercelEnvSet(key, value, "production", projectDir)
-      && vercelEnvSet(key, value, "preview", projectDir)
-      && vercelEnvSet(key, value, "development", projectDir);
-    if (ok) success.push(key);
-    else failed.push(key);
-  }
-
-  return { success, failed };
+): Promise<boolean> {
+  const environments = ["production", "preview", "development"] as const;
+  const results = await Promise.all(
+    environments.map((environment) =>
+      execWithStdinAsync(
+        `${vercelCmd()} env add ${key} ${environment} --force`,
+        value,
+        projectDir,
+      ),
+    ),
+  );
+  return results.every((r) => r.success);
 }

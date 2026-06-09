@@ -10,6 +10,8 @@ function headers(apiKey: string) {
   };
 }
 
+const FETCH_TIMEOUT_MS = 15_000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -56,15 +58,17 @@ async function createProduct(
         title,
         visibility: "visible",
       }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (res.ok) {
       const data = (await res.json()) as { id: string };
       return data.id;
     }
     const err = await res.text().catch(() => "");
-    console.error(`[Whop API] Create product failed: ${err}`);
+    console.error(`[Whop API] Create product failed: ${err.slice(0, 200)}`);
     return null;
-  } catch {
+  } catch (err) {
+    console.error(`[Whop API] Create product error: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
@@ -96,6 +100,7 @@ async function createPlan(
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (res.ok) {
@@ -103,9 +108,10 @@ async function createPlan(
       return data.id;
     }
     const err = await res.text().catch(() => "");
-    console.error(`[Whop API] Create plan failed: ${err}`);
+    console.error(`[Whop API] Create plan failed: ${err.slice(0, 200)}`);
     return null;
-  } catch {
+  } catch (err) {
+    console.error(`[Whop API] Create plan error: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
@@ -248,17 +254,16 @@ export async function setupPlans(
       continue;
     }
 
-    // Monthly plan
-    const monthlyPlanId = await createPlan(apiKey, companyId, productId, tier.monthlyPrice, 30, environment);
+    // Monthly + yearly plans are independent — create them concurrently
+    const [monthlyPlanId, yearlyPlanId] = await Promise.all([
+      createPlan(apiKey, companyId, productId, tier.monthlyPrice, 30, environment),
+      includeYearly && tier.yearlyPrice > 0
+        ? createPlan(apiKey, companyId, productId, tier.yearlyPrice, 365, environment)
+        : Promise.resolve(null),
+    ]);
     if (!monthlyPlanId) {
       s.stop(`Failed to create ${tier.name} monthly plan`);
       continue;
-    }
-
-    // Yearly plan
-    let yearlyPlanId: string | null = null;
-    if (includeYearly && tier.yearlyPrice > 0) {
-      yearlyPlanId = await createPlan(apiKey, companyId, productId, tier.yearlyPrice, 365, environment);
     }
 
     s.stop(`${tier.name}: ${pc.dim(monthlyPlanId)}${yearlyPlanId ? ` + ${pc.dim(yearlyPlanId)}` : ""}`);

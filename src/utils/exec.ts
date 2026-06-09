@@ -110,6 +110,31 @@ export function execWithStdin(cmd: string, input: string, cwd?: string): ExecRes
   }
 }
 
+/**
+ * Async variant of execWithStdin — lets independent commands (e.g. the three
+ * `vercel env add` environments per key) run concurrently.
+ */
+export function execWithStdinAsync(cmd: string, input: string, cwd?: string): Promise<ExecResult> {
+  return new Promise((resolveResult) => {
+    const child = spawn(cmd, { cwd, shell: true, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => child.kill("SIGTERM"), 120_000);
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", (d) => { stderr += d; });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolveResult({ stdout: "", stderr: String(err.message ?? err), success: false });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolveResult({ stdout: stdout.trim(), stderr: stderr.trim(), success: code === 0 });
+    });
+    child.stdin.write(input);
+    child.stdin.end();
+  });
+}
+
 export function hasCommand(cmd: string): boolean {
   return exec(`which ${cmd}`).success;
 }

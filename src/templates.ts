@@ -11,12 +11,6 @@ export interface AppType {
   available: boolean;
 }
 
-export interface DbOption {
-  name: string;
-  description: string;
-  envVarHint: string;
-}
-
 export const FRAMEWORKS: Record<string, { name: string; description: string; available: boolean }> = {
   nextjs: {
     name: "Next.js",
@@ -98,25 +92,3 @@ export const APP_TYPES: Record<string, AppType> = {
   },
 };
 
-export const DB_OPTIONS: Record<string, DbOption> = {
-  neon: {
-    name: "Neon",
-    description: "Serverless Postgres (recommended)",
-    envVarHint: "postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require",
-  },
-  supabase: {
-    name: "Supabase",
-    description: "Open-source Firebase alternative",
-    envVarHint: "postgresql://postgres.xxx:pass@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
-  },
-  local: {
-    name: "Local PostgreSQL",
-    description: "Your own Postgres instance",
-    envVarHint: "postgresql://postgres:postgres@localhost:5432/myapp",
-  },
-  later: {
-    name: "Configure later",
-    description: "Skip database setup for now",
-    envVarHint: "",
-  },
-};
