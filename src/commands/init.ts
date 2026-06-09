@@ -18,6 +18,12 @@ function isCancelled(value: unknown): value is symbol {
   return p.isCancel(value);
 }
 
+// Whop brand orange (#FA4616) — picocolors has no truecolor support, so use
+// a raw 24-bit ANSI escape, falling back to plain text when colors are off.
+function brand(text: string): string {
+  return pc.isColorSupported ? `\x1b[38;2;250;70;22m${text}\x1b[39m` : text;
+}
+
 // Project names end up in shell commands (git, gh, provider CLIs) and
 // package.json — restrict to a safe charset rather than relying on quoting.
 const PROJECT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
@@ -109,12 +115,12 @@ export default defineCommand({
     checkGit();
 
     console.log("");
-    console.log(pc.cyan(`  ██╗    ██╗██╗  ██╗ ██████╗ ██████╗ `));
-    console.log(pc.cyan(`  ██║    ██║██║  ██║██╔═══██╗██╔══██╗`));
-    console.log(pc.cyan(`  ██║ █╗ ██║███████║██║   ██║██████╔╝`));
-    console.log(pc.cyan(`  ██║███╗██║██╔══██║██║   ██║██╔═══╝ `));
-    console.log(pc.cyan(`  ╚███╔███╔╝██║  ██║╚██████╔╝██║     `));
-    console.log(pc.cyan(`   ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝     `));
+    console.log(brand(`  ██╗    ██╗██╗  ██╗ ██████╗ ██████╗ `));
+    console.log(brand(`  ██║    ██║██║  ██║██╔═══██╗██╔══██╗`));
+    console.log(brand(`  ██║ █╗ ██║███████║██║   ██║██████╔╝`));
+    console.log(brand(`  ██║███╗██║██╔══██║██║   ██║██╔═══╝ `));
+    console.log(brand(`  ╚███╔███╔╝██║  ██║╚██████╔╝██║     `));
+    console.log(brand(`   ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝     `));
     console.log("");
     p.intro(`${pc.bgCyan(pc.black(" create-whop-kit "))} Create a Whop-powered app`);
 
