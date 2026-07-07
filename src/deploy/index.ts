@@ -32,11 +32,16 @@ import type { DeployResult } from "./types.js";
 import { whopHosts, whopEnvVarName, type WhopEnvironment } from "../whop-env.js";
 
 const WEBHOOK_EVENTS = [
+  // membership.activated/deactivated drive the template's plan sync —
+  // without them, paid users never get their plan upgraded in the DB
+  "membership.activated",
+  "membership.deactivated",
+  "membership.cancel_at_period_end_changed",
+  "membership.trial_ending_soon",
   "payment.succeeded",
   "payment.failed",
   "payment.pending",
   "payment.created",
-  "membership.cancel_at_period_end_changed",
   "refund.created",
   "dispute.created",
 ];
