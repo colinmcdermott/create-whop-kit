@@ -134,7 +134,9 @@ issues, manifest drift, missing `.env.local` keys.
 Create subscription plans on Whop without leaving the terminal:
 
 ```
-◆ How many paid tiers?  →  2 (Starter + Pro)
+◆ How many paid tiers?  →  2
+◆ Tier 1 name           →  Starter
+◆ Tier 2 name           →  Pro
 ◆ Include a free tier?  →  Yes
 ◆ Billing intervals?    →  Monthly + Yearly
 ◆ Starter monthly ($)   →  29
@@ -145,9 +147,15 @@ Create subscription plans on Whop without leaving the terminal:
 ◇ Creating Free tier... plan_xxx
 ◇ Creating Starter... plan_aaa + plan_bbb
 ◇ Creating Pro... plan_ccc + plan_ddd
+◇ Updated definePlans() in lib/constants.ts to match your tiers
 ```
 
-Creates Whop products + pricing plans via API, writes plan IDs to `.env.local`.
+Supports 1–4 paid tiers with custom names. Creates Whop products + pricing
+plans via API, writes plan IDs to `.env.local`, and rewrites the template's
+`definePlans()` block so the pricing page, gating, and env var names match
+the tiers you actually created (descriptions/features are generated as
+placeholders for you to edit). Projects without a `definePlans()` call —
+like the blank template — are skipped with a note.
 
 ### `whop-kit add email`
 

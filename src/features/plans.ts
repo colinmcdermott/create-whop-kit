@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { setupPlans, planResultToEnvVars } from "../deploy/plans.js";
+import { setupPlans, planResultToEnvVars, applyPlanCodegen } from "../deploy/plans.js";
 import { validateApiKey, getCompanyId } from "../deploy/whop-api.js";
 import { appendEnvVar } from "./helpers.js";
 import { readManifest } from "../scaffolding/manifest.js";
@@ -49,8 +49,13 @@ export const plansFeature: Feature = {
     for (const [key, value] of Object.entries(envVars)) {
       appendEnvVar(projectDir, key, value);
     }
-
     p.log.success("Plan IDs written to .env.local");
+
+    // Sync the template's definePlans() block with the created tiers.
+    // No auto-commit here — `add` runs in the user's working tree, so
+    // leave the change for them to review.
+    applyPlanCodegen(projectDir, result);
+
     p.log.info(pc.dim("Push to Vercel with: vercel env pull && vercel deploy --prod"));
   },
 };

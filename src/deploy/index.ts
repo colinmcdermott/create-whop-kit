@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { exec, execInteractive } from "../utils/exec.js";
@@ -24,7 +26,7 @@ import {
   setOAuthPublicMode,
   createWhopWebhook,
 } from "./whop-api.js";
-import { setupPlans, planResultToEnvVars } from "./plans.js";
+import { setupPlans, planResultToEnvVars, applyPlanCodegen } from "./plans.js";
 import { StepTracker } from "./tracker.js";
 import type { DeployResult } from "./types.js";
 import { whopHosts, whopEnvVarName, type WhopEnvironment } from "../whop-env.js";
@@ -396,6 +398,19 @@ export async function runDeployPipeline(
         if (planResult) {
           planEnvVars = planResultToEnvVars(planResult, framework);
           p.log.success(`${planResult.tiers.length} paid tier(s) created${planResult.freePlanId ? " + free tier" : ""}`);
+
+          // Sync the template's definePlans() block with the tiers just
+          // created, then commit so a git-triggered deploy doesn't revert
+          // it. (The direct `vercel deploy` below picks it up regardless.)
+          const codegen = applyPlanCodegen(projectDir, planResult);
+          if (codegen.ok && existsSync(join(projectDir, ".git"))) {
+            exec("git add -A", projectDir);
+            exec(`git commit -m "chore: sync plan definitions with Whop tiers"`, projectDir);
+            if (githubRepoUrl) {
+              exec("git push", projectDir, 60_000);
+            }
+          }
+
           tracker.success("Pricing plans", `${planResult.tiers.length} tier(s)`);
         } else {
           tracker.failed("Pricing plans", "Run: npx whop-kit add plans");

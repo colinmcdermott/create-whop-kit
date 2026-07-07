@@ -1,7 +1,12 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { exec } from "../utils/exec.js";
 import { whopHosts, type WhopEnvironment } from "../whop-env.js";
+import {
+  generatePlansObject,
+  rewriteDefinePlans,
+  projectSupportsHiddenFlag,
+  type RewriteResult,
+} from "../scaffolding/plan-codegen.js";
 
 function headers(apiKey: string) {
   return {
@@ -37,6 +42,19 @@ export interface PlanSetupResult {
   tiers: CreatedPlan[];
   includeFree: boolean;
   freePlanId: string | null;
+  includeYearly: boolean;
+}
+
+// Tier keys become definePlans() keys and env var names
+// (NEXT_PUBLIC_WHOP_{KEY}_PLAN_ID), so they must be identifier-safe.
+const TIER_KEY_RE = /^[a-z][a-z0-9_]*$/;
+
+export function tierKeyFromName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +154,7 @@ export async function setupPlans(
       { value: 1, label: "1 tier", hint: "e.g. Pro" },
       { value: 2, label: "2 tiers", hint: "e.g. Starter + Pro" },
       { value: 3, label: "3 tiers", hint: "e.g. Starter + Pro + Enterprise" },
+      { value: 4, label: "4 tiers", hint: "e.g. Basic + Starter + Pro + Enterprise" },
     ],
   });
   if (p.isCancel(tierCount)) return null;
@@ -163,16 +182,40 @@ export async function setupPlans(
     1: ["Pro"],
     2: ["Starter", "Pro"],
     3: ["Starter", "Pro", "Enterprise"],
+    4: ["Basic", "Starter", "Pro", "Enterprise"],
+  };
+  const suggestedPrices: Record<string, string> = {
+    Basic: "9",
+    Starter: "29",
+    Pro: "79",
+    Enterprise: "199",
   };
 
-  const tierNames = defaultNames[tierCount as number] || ["Pro"];
+  const suggestedNames = defaultNames[tierCount as number] || ["Pro"];
 
-  // Collect pricing for each tier
+  // Collect name + pricing for each tier
   const tiers: PlanTier[] = [];
-  for (const name of tierNames) {
+  for (let i = 0; i < (tierCount as number); i++) {
+    const suggested = suggestedNames[i];
+    const nameResult = await p.text({
+      message: `Tier ${i + 1} name`,
+      initialValue: suggested,
+      validate: (v) => {
+        if (!v?.trim()) return "Required";
+        const key = tierKeyFromName(v);
+        if (!TIER_KEY_RE.test(key)) {
+          return "Name must contain letters (used for env vars and code identifiers)";
+        }
+        if (key === "free") return `"Free" is reserved for the built-in free tier`;
+        if (tiers.some((t) => t.key === key)) return "A tier with this name already exists";
+      },
+    });
+    if (p.isCancel(nameResult)) return null;
+    const name = nameResult.trim();
+
     const monthlyPrice = await p.text({
       message: `${name} — monthly price ($)`,
-      placeholder: name === "Starter" ? "29" : name === "Pro" ? "79" : "199",
+      placeholder: suggestedPrices[suggested] ?? "49",
       validate: (v) => {
         if (!v) return "Required";
         const n = parseFloat(v);
@@ -198,7 +241,7 @@ export async function setupPlans(
     }
 
     tiers.push({
-      key: name.toLowerCase().replace(/\s+/g, "_"),
+      key: tierKeyFromName(name),
       name,
       monthlyPrice: parseFloat(monthlyPrice),
       yearlyPrice: yearlyPrice ? parseFloat(yearlyPrice) : 0,
@@ -279,7 +322,7 @@ export async function setupPlans(
     });
   }
 
-  return { tiers: created, includeFree, freePlanId };
+  return { tiers: created, includeFree, freePlanId, includeYearly };
 }
 
 /**
@@ -303,4 +346,44 @@ export function planResultToEnvVars(result: PlanSetupResult, framework = "nextjs
   }
 
   return vars;
+}
+
+/**
+ * Rewrite the project's definePlans() block to match the tiers that were
+ * just created on Whop, so the template's plan structure (pricing page,
+ * env var names, setup wizard, gating) lines up with reality instead of
+ * assuming the default free/starter/pro layout.
+ */
+export function applyPlanCodegen(projectDir: string, result: PlanSetupResult): RewriteResult {
+  const supportsHidden = projectSupportsHiddenFlag(projectDir);
+  const plansObject = generatePlansObject({
+    tiers: result.tiers.map(({ key, name, monthlyPrice, yearlyPrice }) => ({
+      key,
+      name,
+      monthlyPrice,
+      yearlyPrice,
+    })),
+    includeFree: result.includeFree,
+    includeYearly: result.includeYearly,
+    supportsHidden,
+  });
+
+  const res = rewriteDefinePlans(projectDir, plansObject);
+  if (res.ok) {
+    p.log.success(`Updated definePlans() in ${pc.bold(res.file!)} to match your tiers`);
+    if (!result.includeFree && !supportsHidden) {
+      p.log.info(
+        pc.dim(
+          "Free tier stays visible on pricing — hiding it needs whop-kit >= 0.3.1 (npx whop-kit upgrade)",
+        ),
+      );
+    }
+    p.log.info(pc.dim(`Tier descriptions and features are placeholders — edit ${res.file}`));
+  } else {
+    p.log.warning(`Couldn't update plan definitions automatically (${res.reason}).`);
+    p.log.info(
+      pc.dim("If your template defines plans, edit its definePlans() call to match your tiers."),
+    );
+  }
+  return res;
 }
