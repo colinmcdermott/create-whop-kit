@@ -7,7 +7,7 @@ import pkg from "../../package.json" with { type: "json" };
 import { FRAMEWORKS, APP_TYPES, getTemplate } from "../templates.js";
 import { DB_PROVIDERS } from "../providers/index.js";
 import { checkNodeVersion, checkGit, validateDatabaseUrl, validateProjectName } from "../utils/checks.js";
-import { detectPackageManager, exec } from "../utils/exec.js";
+import { detectPackageManager, exec, execFile } from "../utils/exec.js";
 import { cleanupDir } from "../utils/cleanup.js";
 import { cloneTemplate, updatePackageName, initGit } from "../scaffolding/clone.js";
 import { whopEnvVarName, type WhopEnvironment } from "../whop-env.js";
@@ -425,7 +425,7 @@ export default defineCommand({
       });
 
       if (!isCancelled(editorChoice) && editorChoice !== "skip") {
-        exec(`${editorChoice} "${projectDir}"`);
+        execFile(editorChoice, [projectDir]);
         p.log.success(`Opened in ${editors.find((e) => e.cmd === editorChoice)?.label}`);
       }
     }
