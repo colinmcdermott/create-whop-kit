@@ -1,11 +1,15 @@
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join, basename } from "node:path";
-import { exec } from "../utils/exec.js";
+import { exec, execFile } from "../utils/exec.js";
 
 export function cloneTemplate(repo: string, projectDir: string): boolean {
-  const result = exec(
-    `git clone --depth 1 https://github.com/${repo}.git "${projectDir}"`,
-  );
+  const result = execFile("git", [
+    "clone",
+    "--depth",
+    "1",
+    `https://github.com/${repo}.git`,
+    projectDir,
+  ]);
 
   if (!result.success || !existsSync(projectDir)) {
     return false;

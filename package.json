@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "tsx --test test/**/*.test.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
+    "tsx": "^4.20.6",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3"
   },

@@ -1,4 +1,4 @@
-import { execSync, spawn } from "node:child_process";
+import { execFileSync, execSync, spawn } from "node:child_process";
 
 export interface ExecResult {
   stdout: string;
@@ -9,6 +9,30 @@ export interface ExecResult {
 export function exec(cmd: string, cwd?: string, timeoutMs = 120_000): ExecResult {
   try {
     const stdout = execSync(cmd, {
+      cwd,
+      stdio: "pipe",
+      encoding: "utf-8",
+      timeout: timeoutMs,
+    }).trim();
+    return { stdout, stderr: "", success: true };
+  } catch (err: unknown) {
+    const e = err as { stderr?: Buffer | string; stdout?: Buffer | string };
+    return {
+      stdout: e.stdout?.toString?.().trim() ?? "",
+      stderr: e.stderr?.toString?.().trim() ?? "",
+      success: false,
+    };
+  }
+}
+
+export function execFile(
+  file: string,
+  args: readonly string[],
+  cwd?: string,
+  timeoutMs = 120_000,
+): ExecResult {
+  try {
+    const stdout = execFileSync(file, args, {
       cwd,
       stdio: "pipe",
       encoding: "utf-8",
